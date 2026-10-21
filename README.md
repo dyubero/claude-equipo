@@ -7,7 +7,34 @@ su rama sale en una franja sobre el prompt con un botón **Subir**.
 
 Sale de las herramientas de un proyecto que lleva meses trabajando así, con hasta diez ramas en paralelo. Esta copia es
 genérica: lo que cambia de un proyecto a otro (comandos de compilar y probar, archivos que no se suben…) va en un
-archivo de ajustes, y por defecto está pensada para un proyecto web con `npm run build` y `npm test`.
+archivo de ajustes, y **no hace falta escribirlo a mano: lo prepara tu agente**, estudiando tu proyecto y preguntándote
+lo que no pueda deducir.
+
+## Cómo empezar: dáselo a tu agente
+
+Abre Claude Code en la carpeta de tu proyecto (la copia principal, en la rama principal) y dile:
+
+> Instala el plugin de https://github.com/<usuario>/claude-equipo (o: de la carpeta `<ruta>`) y adáptalo a este
+> proyecto. Lee su README, estudia cómo compila, prueba y documenta el proyecto, y pregúntame lo que necesites antes de
+> dejarlo configurado.
+
+El agente:
+
+1. instala el plugin (ver «Instalar»);
+2. sigue la skill **`preparar`**: un script estudia el proyecto (gestor de paquetes, scripts de `package.json`, ejecutor
+   de pruebas, lockfiles y archivos generados, documentos de diseño, backlog o changelog, archivos sensibles sin ignorar,
+   idioma de los commits, CLAUDE.md) y propone los ajustes; el agente lee además lo que haga falta (README, CI,
+   configuración de las pruebas);
+3. te pregunta, en un bloque con opciones y una recomendación, solo lo dudoso: qué se pasa para comprobar que compila,
+   qué pruebas al subir, qué archivos son generados o no deben entrar nunca, si quieres decisiones numeradas o backlog…;
+4. escribe `.claude/equipo.json`, prueba los comandos, instala los drivers de fusión y, si quieres, añade a tu
+   CLAUDE.md el apartado del flujo (para que el agente de la copia principal no implemente allí y los de los worktrees
+   sepan avisar);
+5. te cuenta qué ha quedado y cómo se lanza el primer encargo.
+
+**Si eres el agente que lo instala:** hazlo como dice «Instalar» y después sigue la skill `equipo:preparar` (si aún no
+sale en tu lista de skills, lee directamente `plugin/skills/preparar/SKILL.md` de este repositorio y síguela, con los
+scripts de `plugin/scripts`). No escribas los ajustes sin preguntar al usuario lo que no se deduce del proyecto.
 
 ## Qué lleva
 
@@ -23,6 +50,7 @@ archivo de ajustes, y por defecto está pensada para un proyecto web con `npm ru
 | **`/pendiente`** | todas | `/pendiente <texto>` lo apunta, con fecha y rama, en «Apuntes rápidos» del documento de pendientes. Sin texto, lista lo apuntado. |
 | **Freno a las fusiones** | worktrees | Una orden que fusiona en la copia principal desde un worktree (`git -C <principal> merge …`, `cd <principal> && git merge …`, `pull`) se niega, explicando al agente cómo avisar. |
 | **Guarda de los commits** | todas | En la copia principal niega `git add -A`, `git add .`, `git add -u`, `git commit -a` / `--all` y `git commit .`. En cualquier copia niega que entren los `prohibidos` de los ajustes (por ejemplo `.env.local` o `dist/`). |
+| **Skill `preparar`** | principal | Adapta el plugin a tu proyecto: lo estudia, te pregunta lo dudoso, escribe `.claude/equipo.json`, prueba los comandos, instala los drivers y añade el flujo a tu CLAUDE.md. Si la copia principal no tiene ajustes, el plugin te lo recuerda al empezar la sesión. |
 | **Skill `encargo`** | principal | Lanza un encargo: nombre de la rama, bloque de decisiones si se usan, `orca worktree create` con el texto del usuario tal cual y la fila en el documento de pendientes. |
 | **Skill `lista-para-subir`** | worktree | Commit, traer la principal, repetir solo las pruebas que se cruzan y el aviso a la sesión principal con el formato exacto que lee la franja. |
 | **Skill `comprobar-lote`** | principal | Lo que hace Claude cuando la franja le pide comprobar un lote: rehacer lo generado, renumerar el backlog, una sola tanda de pruebas y `resultado_lote`. |
@@ -60,11 +88,14 @@ claude plugin install equipo@claude-equipo
 
 Con la carpeta como marketplace, una sesión lee el plugin de esa carpeta: si cambias algo, basta `/reload-plugins`.
 
-Después, en cada proyecto:
+Las skills nuevas salen en la sesión siguiente (o tras `/reload-plugins`). Después, en cada proyecto:
 
-1. Crea los ajustes: `node <carpeta del plugin>/scripts/ajustes.mjs --crear` (escribe `.claude/equipo.json` con los
-   valores por defecto; `claude plugin list` dice dónde está el plugin), o copia `ejemplos/equipo.json`. Haz commit del
-   archivo: cada worktree lee el suyo.
+1. **Prepáralo:** en la sesión de la copia principal, pide «prepara el plugin equipo para este proyecto» (skill
+   `preparar`, ver «Cómo empezar»). Deja `.claude/equipo.json` con commit: cada worktree lee el suyo.
+
+   A mano también se puede: `node <carpeta del plugin>/scripts/explorar.mjs` dice lo que se deduce del proyecto y
+   propone los ajustes; `node <carpeta del plugin>/scripts/ajustes.mjs --crear` escribe uno con los valores por defecto
+   (`claude plugin list` dice dónde está el plugin); o copia `ejemplos/equipo.json`.
 2. Abre la sesión de la copia principal **en la raíz del repositorio**. Al empezar, el plugin instala los drivers de
    fusión en el `.git` del repositorio (ver «Qué toca en tu repositorio»).
 

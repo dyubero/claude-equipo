@@ -309,6 +309,11 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
     argumentHint: '[worktree]',
   })
   await $.command.register({ name: 'pendiente', description: 'Apunta un pendiente en el documento de pendientes (equipo)', argumentHint: '<texto>' })
+  // Sin ajustes valen los de por defecto (npm): en la principal se le recuerda al usuario que lo adapte a su proyecto.
+  const propios = await $.fs.read(`${await $.session.root()}/${ARCHIVO}`).catch(() => null)
+  if (typeof propios !== 'string' && (await enPrincipal($))) {
+    await $.ui.toast('equipo: este proyecto aún no tiene .claude/equipo.json. Pide a Claude «prepara el plugin equipo para este proyecto».')
+  }
   if (!conSubidas) return
   // Los drivers de fusión van al .git común: en cualquier copia, para que valgan también al traer la principal.
   await instalarDrivers($)

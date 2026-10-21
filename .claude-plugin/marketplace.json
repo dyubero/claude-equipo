@@ -6,7 +6,7 @@
     {
       "name": "equipo",
       "source": "./plugin",
-      "description": "Subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo de encargos"
+      "description": "Subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git, skills del flujo de encargos y una skill que lo adapta a cada proyecto"
     }
   ]
 }

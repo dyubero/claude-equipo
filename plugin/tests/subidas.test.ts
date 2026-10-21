@@ -33,7 +33,7 @@ const PORCELANA = `worktree ${PRINCIPAL}\nHEAD 1\nbranch refs/heads/main\n\nwork
 const ORCA = JSON.stringify({ ok: true, result: { worktrees: [{ path: CARRITO, displayName: 'carrito', comment: 'D31-D40' }] } })
 const CON_BACKLOG = JSON.stringify({ backlog: { activo: true }, decisiones: { activo: true }, comandos: { regenerar: 'npm install' } })
 
-type Escena = { enPrincipal?: boolean; chocan?: string[]; plan?: unknown; fusionadas?: string[]; ajustes?: string }
+type Escena = { enPrincipal?: boolean; chocan?: string[]; plan?: unknown; fusionadas?: string[]; ajustes?: string | null }
 type Enviado = { to: string; text: string }
 
 const BANDA = {
@@ -50,7 +50,7 @@ function preparar(on: On, escena: Escena = {}) {
   const r = { ordenes: [] as string[][], prompts: [] as string[], enviados: [] as Enviado[], toasts: [] as string[] }
   mock.clock(on, { now: Date.UTC(2026, 9, 21, 12) })
   const raiz = escena.enPrincipal === false ? CARRITO : PRINCIPAL
-  const ajustes = escena.ajustes ?? CON_BACKLOG
+  const ajustes = escena.ajustes === undefined ? CON_BACKLOG : escena.ajustes
   on('session.start', () => ({ cwd: raiz }))
   on('session.root', () => ({ value: raiz }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -69,7 +69,7 @@ function preparar(on: On, escena: Escena = {}) {
   })
   on('session.receive', ($, e) => ({ text: e.text }))
   on('fs.stat', ($, e) => ({ value: { kind: e.path.replace(/\\/g, '/').toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
-  on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('.claude/equipo.json') ? { value: ajustes } : { deny: 'no existe' }))
+  on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('.claude/equipo.json') && ajustes !== null ? { value: ajustes } : { deny: 'no existe' }))
   on('process.run', ($, e) => {
     const argv = [...e.argv]
     r.ordenes.push(argv)
@@ -180,6 +180,19 @@ test('al empezar se instalan los drivers de fusión del plugin', NO_CONTEXTO, as
   await arrancar($)
   const instalar = r.ordenes.find(o => o[0] === 'node' && o[2] === 'instalar')
   expect(instalar?.[1]).toMatch(/\/scripts\/fusion\.mjs$/)
+})
+
+test('en la principal sin .claude/equipo.json, recuerda que hay que preparar el proyecto', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: null })
+  await arrancar($)
+  expect(r.toasts.length).toBe(1)
+  expect(r.toasts[0]).toMatch(/prepara el plugin equipo/)
+})
+
+test('con ajustes no lo recuerda', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on)
+  await arrancar($)
+  expect(r.toasts).toEqual([])
 })
 
 test('con las subidas apagadas, el aviso llega a Claude y no se instala nada', { options: { subidas: false, contexto: false } }, async ($, on) => {
