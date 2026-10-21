@@ -14,7 +14,7 @@ lo que no pueda deducir.
 
 Abre Claude Code en la carpeta de tu proyecto (la copia principal, en la rama principal) y dile:
 
-> Instala el plugin de https://github.com/<usuario>/claude-equipo (o: de la carpeta `<ruta>`) y adáptalo a este
+> Instala el plugin de https://github.com/dyubero/claude-equipo y adáptalo a este
 > proyecto. Lee su README, estudia cómo compila, prueba y documenta el proyecto, y pregúntame lo que necesites antes de
 > dejarlo configurado.
 
@@ -72,10 +72,10 @@ del repositorio.
 
 ## Instalar
 
-En una terminal con Claude Code (si el repositorio está en GitHub):
+En una terminal con Claude Code:
 
 ```
-/plugin install equipo --marketplace <usuario>/claude-equipo
+/plugin install equipo --marketplace dyubero/claude-equipo
 ```
 
 Responde `y` para añadir el marketplace, elige el ámbito (el de usuario vale para todos tus proyectos) y deja los
@@ -205,3 +205,7 @@ Para probar un cambio en el plugin sin reinstalarlo: `claude --plugin-dir plugin
 - La franja se dibuja en la terminal y en la app de escritorio; en la extensión de VS Code y en `claude -p`, no.
 - Los avisos se reconocen por su primera frase: «La rama X está lista para subir (commit)». Si un agente la escribe de
   otra forma, no sale en la franja y Claude lo recibe como un mensaje normal.
+
+## Licencia
+
+MIT: ver `LICENSE`.

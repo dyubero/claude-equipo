@@ -5,6 +5,7 @@
   "author": {
     "name": "dyubero"
   },
+  "license": "MIT",
   "keywords": [
     "orca",
     "worktrees",
