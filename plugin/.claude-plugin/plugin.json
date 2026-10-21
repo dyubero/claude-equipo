@@ -1,0 +1,42 @@
+{
+  "name": "equipo",
+  "version": "0.1.0",
+  "description": "Trabajo en paralelo con agentes en worktrees de Orca: subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo",
+  "author": {
+    "name": "dyubero"
+  },
+  "keywords": [
+    "orca",
+    "worktrees",
+    "git",
+    "subidas",
+    "agentes"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "contexto": {
+      "type": "boolean",
+      "title": "Franja del contexto",
+      "description": "Una línea sobre el prompt con el contexto usado y libre, y el botón Compactar.",
+      "default": true
+    },
+    "subidas": {
+      "type": "boolean",
+      "title": "Subidas desde la copia principal",
+      "description": "Los avisos «lista para subir» salen en la franja con Subir, Solucionar y Borrar; ensayo, cola y resultado_lote.",
+      "default": true
+    },
+    "fusiones": {
+      "type": "boolean",
+      "title": "Freno a las fusiones en la principal",
+      "description": "Desde un worktree, niega fusionar en la copia principal: las ramas las sube el usuario desde allí.",
+      "default": true
+    },
+    "commits": {
+      "type": "boolean",
+      "title": "Guarda de los commits",
+      "description": "En la principal niega git add -A / . / -u y git commit -a; en cualquier copia, los «prohibidos» de .claude/equipo.json.",
+      "default": true
+    }
+  }
+}

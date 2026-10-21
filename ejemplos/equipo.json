@@ -1,0 +1,17 @@
+{
+  "$comentario": "Ejemplo de .claude/equipo.json para una web con Vite y Vitest. Las claves que empiezan por $ no cuentan. Lo que no esté, vale lo de por defecto (node <plugin>/scripts/ajustes.mjs lo enseña).",
+  "ramaPrincipal": "main",
+  "idioma": "es",
+  "comandos": {
+    "compilar": "npm run build",
+    "probar": "npm test",
+    "probarArchivos": "npx vitest run {archivos}",
+    "regenerar": "npm install"
+  },
+  "prohibidos": [".env.local", "dist/", "coverage/"],
+  "generados": ["package-lock.json"],
+  "unir": ["CHANGELOG.md"],
+  "decisiones": { "activo": false, "documento": "DESIGN.md", "prefijo": "D", "bloque": 10 },
+  "backlog": { "activo": false, "documento": "BACKLOG.md" },
+  "pendientes": "docs/pendientes.md"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "claude-equipo",
+  "owner": { "name": "dyubero" },
+  "metadata": { "description": "Trabajo en paralelo con agentes de Claude Code en worktrees de Orca" },
+  "plugins": [
+    {
+      "name": "equipo",
+      "source": "./plugin",
+      "description": "Subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo de encargos"
+    }
+  ]
+}
