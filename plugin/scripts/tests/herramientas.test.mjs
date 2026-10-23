@@ -184,3 +184,29 @@ describe('repositorio con una rama en su worktree', () => {
     assert.match(estado.texto(datos), /carrito \[a media fusión\] D20-D29/)
   })
 })
+
+describe('pruebas en otros lenguajes', () => {
+  let repo
+  afterEach(() => borrar(repo))
+
+  test('Python y Go: los tests que nombran el código cambiado, y los manifiestos', () => {
+    repo = repoNuevo('lenguajes-')
+    escribir(repo, 'src/orders/core.py', 'def total(): pass\n')
+    escribir(repo, 'tests/test_core.py', 'from orders.core import total\n')
+    escribir(repo, 'tests/test_otro.py', 'def test_x(): pass\n')
+    escribir(repo, 'internal/panier/panier.go', 'package panier\n')
+    escribir(repo, 'internal/panier/panier_test.go', 'package panier\n')
+    commit(repo, 'base')
+    const patron = new RegExp('(^|/)(test_[^/]*\.py|[^/]*_test\.go)$')
+    assert.deepEqual(pruebas.testsDe(['src/orders/core.py', 'internal/panier/panier.go'], patron, repo), [
+      'internal/panier/panier_test.go',
+      'tests/test_core.py',
+    ])
+    assert.equal(pruebas.nombreBase('Assets/Tests/InventarTests.cs'), 'Inventar')
+    assert.equal(pruebas.nombreBase('spec/cart_spec.rb'), 'cart')
+    sh(repo, ['checkout', '-q', '-b', 'deps'])
+    escribir(repo, 'pyproject.toml', '[project]\n')
+    commit(repo, 'deps')
+    assert.equal(pruebas.analizar('main..deps', repo).dependencias, true)
+  })
+})

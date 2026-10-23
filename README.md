@@ -1,5 +1,20 @@
 # claude-equipo
 
+> **English summary.** A [Claude Code](https://code.claude.com) plugin for running **several agents at once, each in
+> its own Orca worktree**, and merging their branches into the main branch without stepping on each other: a dry run
+> with `git merge-tree`, a merge queue ordered by fewest conflicts, one check per batch, merge drivers for append-only
+> docs and generated files, and git guards that stop agents from merging on their own. It works with any stack:
+> after installing, ask your agent to **adapt it to your project** (skill `adapt-to-project`) — it inspects how the
+> project builds and tests (Node, Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart, Swift, CMake, Unity, Godot,
+> Unreal, Makefiles, CI), asks you only what it cannot deduce, in your language, and writes the settings. Prompt to
+> give your agent:
+>
+> *Install the plugin from https://github.com/dyubero/claude-equipo and adapt it to this project. Study how it builds,
+> tests and documents things, and ask me whatever you need before configuring it.*
+>
+> The adaptation skill is in English and talks to you in your language; the rest of the plugin's skills and on-screen
+> texts are currently in Spanish. The documentation below is in Spanish.
+
 Un plugin de [Claude Code](https://code.claude.com) para trabajar con **varios agentes a la vez, cada uno en su
 worktree de Orca**, y subir sus ramas a la rama principal sin pisarse: tú hablas con
 una sesión en la copia principal, ella lanza cada encargo a un worktree nuevo con su agente, y cuando un agente acaba,
@@ -18,13 +33,15 @@ Abre Claude Code en la carpeta de tu proyecto (la copia principal, en la rama pr
 > proyecto. Lee su README, estudia cómo compila, prueba y documenta el proyecto, y pregúntame lo que necesites antes de
 > dejarlo configurado.
 
-El agente:
+Vale en cualquier idioma: el agente te habla en el tuyo y escribe los ajustes y el CLAUDE.md en el del equipo. El
+agente:
 
 1. instala el plugin (ver «Instalar»);
-2. sigue la skill **`preparar`**: un script estudia el proyecto (gestor de paquetes, scripts de `package.json`, ejecutor
-   de pruebas, lockfiles y archivos generados, documentos de diseño, backlog o changelog, archivos sensibles sin ignorar,
-   idioma de los commits, CLAUDE.md) y propone los ajustes; el agente lee además lo que haga falta (README, CI,
-   configuración de las pruebas);
+2. sigue la skill **`adapt-to-project`**: un script estudia el proyecto (el ecosistema y sus comandos — Node, Python,
+   Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart/Flutter, Swift, CMake, Unity, Godot, Unreal —, objetivos de Makefile,
+   lo que pasa la CI, lockfiles y archivos generados, documentos de diseño, backlog o changelog, archivos sensibles sin
+   ignorar, idioma y estilo de los commits, CLAUDE.md) y propone los ajustes; el agente lee además lo que haga falta
+   (README, CI, configuración de las pruebas);
 3. te pregunta, en un bloque con opciones y una recomendación, solo lo dudoso: qué se pasa para comprobar que compila,
    qué pruebas al subir, qué archivos son generados o no deben entrar nunca, si quieres decisiones numeradas o backlog…;
 4. escribe `.claude/equipo.json`, prueba los comandos, instala los drivers de fusión y, si quieres, añade a tu
@@ -32,9 +49,10 @@ El agente:
    sepan avisar);
 5. te cuenta qué ha quedado y cómo se lanza el primer encargo.
 
-**Si eres el agente que lo instala:** hazlo como dice «Instalar» y después sigue la skill `equipo:preparar` (si aún no
-sale en tu lista de skills, lee directamente `plugin/skills/preparar/SKILL.md` de este repositorio y síguela, con los
-scripts de `plugin/scripts`). No escribas los ajustes sin preguntar al usuario lo que no se deduce del proyecto.
+**Si eres el agente que lo instala** (*if you are the agent installing it*): instálalo como dice «Instalar» y sigue la
+skill `equipo:adapt-to-project`. Si aún no sale en tu lista de skills, lee directamente
+`plugin/skills/adapt-to-project/SKILL.md` de este repositorio y síguela, con los scripts de `plugin/scripts`. No
+escribas los ajustes sin preguntar al usuario lo que no se deduce del proyecto.
 
 ## Qué lleva
 
@@ -50,13 +68,14 @@ scripts de `plugin/scripts`). No escribas los ajustes sin preguntar al usuario l
 | **`/pendiente`** | todas | `/pendiente <texto>` lo apunta, con fecha y rama, en «Apuntes rápidos» del documento de pendientes. Sin texto, lista lo apuntado. |
 | **Freno a las fusiones** | worktrees | Una orden que fusiona en la copia principal desde un worktree (`git -C <principal> merge …`, `cd <principal> && git merge …`, `pull`) se niega, explicando al agente cómo avisar. |
 | **Guarda de los commits** | todas | En la copia principal niega `git add -A`, `git add .`, `git add -u`, `git commit -a` / `--all` y `git commit .`. En cualquier copia niega que entren los `prohibidos` de los ajustes (por ejemplo `.env.local` o `dist/`). |
-| **Skill `preparar`** | principal | Adapta el plugin a tu proyecto: lo estudia, te pregunta lo dudoso, escribe `.claude/equipo.json`, prueba los comandos, instala los drivers y añade el flujo a tu CLAUDE.md. Si la copia principal no tiene ajustes, el plugin te lo recuerda al empezar la sesión. |
+| **Skill `adapt-to-project`** | principal | Adapta el plugin a tu proyecto: lo estudia, te pregunta lo dudoso, escribe `.claude/equipo.json`, prueba los comandos, instala los drivers y añade el flujo a tu CLAUDE.md. Si la copia principal no tiene ajustes, el plugin te lo recuerda al empezar la sesión. |
 | **Skill `encargo`** | principal | Lanza un encargo: nombre de la rama, bloque de decisiones si se usan, `orca worktree create` con el texto del usuario tal cual y la fila en el documento de pendientes. |
 | **Skill `lista-para-subir`** | worktree | Commit, traer la principal, repetir solo las pruebas que se cruzan y el aviso a la sesión principal con el formato exacto que lee la franja. |
 | **Skill `comprobar-lote`** | principal | Lo que hace Claude cuando la franja le pide comprobar un lote: rehacer lo generado, renumerar el backlog, una sola tanda de pruebas y `resultado_lote`. |
 | **Skill `estado-ramas`** | principal | Cómo va cada worktree (en marcha, esperando al usuario, a media fusión, al día para subir) y con qué chocaría si se subiera ahora. |
 
-Los textos de los mods y las skills están en español.
+Los textos de los mods y las skills están en español, salvo `adapt-to-project`, que está en inglés y habla al usuario en
+su idioma.
 
 ## Requisitos
 
@@ -90,10 +109,10 @@ Con la carpeta como marketplace, una sesión lee el plugin de esa carpeta: si ca
 
 Las skills nuevas salen en la sesión siguiente (o tras `/reload-plugins`). Después, en cada proyecto:
 
-1. **Prepáralo:** en la sesión de la copia principal, pide «prepara el plugin equipo para este proyecto» (skill
-   `preparar`, ver «Cómo empezar»). Deja `.claude/equipo.json` con commit: cada worktree lee el suyo.
+1. **Adáptalo:** en la sesión de la copia principal, pide «adapta el plugin equipo a este proyecto» o
+   `/equipo:adapt-to-project` (ver «Cómo empezar»). Deja `.claude/equipo.json` con commit: cada worktree lee el suyo.
 
-   A mano también se puede: `node <carpeta del plugin>/scripts/explorar.mjs` dice lo que se deduce del proyecto y
+   A mano también se puede: `node <carpeta del plugin>/scripts/inspect-project.mjs` dice lo que se deduce del proyecto y
    propone los ajustes; `node <carpeta del plugin>/scripts/ajustes.mjs --crear` escribe uno con los valores por defecto
    (`claude plugin list` dice dónde está el plugin); o copia `ejemplos/equipo.json`.
 2. Abre la sesión de la copia principal **en la raíz del repositorio**. Al empezar, el plugin instala los drivers de
@@ -107,11 +126,12 @@ copia.
 | Clave | Por defecto | Para qué |
 |---|---|---|
 | `ramaPrincipal` | `"main"` | La rama a la que se suben las demás. |
-| `idioma` | `"es"` | Idioma de los commits, documentos y avisos que escriben los agentes (lo leen las skills). |
+| `idioma` | `"es"` | Idioma de los commits, documentos y avisos que escriben los agentes (código ISO: `en`, `es`, `fr`…; lo leen las skills). |
 | `comandos.compilar` | `"npm run build"` | Lo primero que se pasa en el lote y al traer la principal. `""` si no hay. |
 | `comandos.probar` | `"npm test"` | Todas las pruebas. |
 | `comandos.probarArchivos` | `""` | Solo unas pruebas: `{archivos}` se cambia por la lista (p. ej. `"npx vitest run {archivos}"`). Vacío: siempre `probar`. |
 | `comandos.regenerar` | `""` | Rehace los `generados` tras subir (p. ej. `"npm install"` para `package-lock.json`). |
+| `pruebas.patron` | archivos `*.test.*` / `*.spec.*` de JS y TS | Expresión regular que dice qué archivos son pruebas, para elegir las de cada rama. `adapt-to-project` propone la de cada ecosistema (`test_*.py`, `*_test.go`, `*_spec.rb`…). |
 | `prohibidos` | `[]` | Archivos o carpetas (rutas desde la raíz, sin comodines) que nunca entran en un commit. |
 | `generados` | `[]` | Patrones (como en `.gitattributes`) de archivos generados: al fusionar se queda el de la copia actual y luego se rehacen. |
 | `unir` | `[]` | Documentos en los que, si dos ramas solo añaden líneas en el mismo sitio, se conservan las dos. |

@@ -11,7 +11,7 @@ No arregles en la principal lo que falla en una rama ni deshagas fusiones sin qu
 Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta skill (la «Base directory» que sale al
 cargarla). Abajo se escriben como `<scripts>`. Los ajustes, con `node <scripts>/ajustes.mjs`.
 
-Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:preparar`
+Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:adapt-to-project`
 (estudia el proyecto y pregunta al usuario cómo compila, prueba y documenta).
 
 Ramas del lote: las de la petición del mod (que trae el aviso de cada agente, con su «Probar:»), o las que diga el

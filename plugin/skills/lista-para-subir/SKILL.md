@@ -13,7 +13,7 @@ Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta s
 cargarla). Abajo se escriben como `<scripts>`. Los ajustes, con `node <scripts>/ajustes.mjs`.
 
 Si el proyecto no tiene `.claude/equipo.json`, valen los ajustes por defecto (`npm run build`, `npm test`): si no
-sirven para este proyecto, dile al usuario que lo prepare en la copia principal con la skill `equipo:preparar`.
+sirven para este proyecto, dile al usuario que lo prepare en la copia principal con la skill `equipo:adapt-to-project`.
 
 ## Pasos
 

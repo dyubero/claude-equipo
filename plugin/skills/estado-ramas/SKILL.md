@@ -11,7 +11,7 @@ propone al usuario.
 Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta skill (la «Base directory» que sale al
 cargarla).
 
-Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:preparar`
+Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:adapt-to-project`
 (estudia el proyecto y pregunta al usuario cómo compila, prueba y documenta).
 
 ## Pasos

@@ -186,7 +186,7 @@ test('en la principal sin .claude/equipo.json, recuerda que hay que preparar el 
   const r = preparar(on, { ajustes: null })
   await arrancar($)
   expect(r.toasts.length).toBe(1)
-  expect(r.toasts[0]).toMatch(/prepara el plugin equipo/)
+  expect(r.toasts[0]).toMatch(/adapt-to-project/)
 })
 
 test('con ajustes no lo recuerda', NO_CONTEXTO, async ($, on) => {

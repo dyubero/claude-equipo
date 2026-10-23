@@ -7,7 +7,10 @@
 // - `tests`: los archivos de prueba que cambian (los que casan con «pruebas.patron») y los que nombran un archivo de
 //   código que cambia (por su nombre sin extensión: «carrito.ts» → los tests que dicen «carrito»);
 // - `generados`: si toca archivos de «generados», que hay que rehacer con «comandos.regenerar»;
-// - `dependencias`: si cambia algún package.json (puede hacer falta instalar antes de probar).
+// - `dependencias`: si cambia algún manifiesto de dependencias (package.json, pyproject.toml, Cargo.toml, go.mod…: puede
+//   hacer falta instalar antes de probar).
+// Vale para cualquier lenguaje: el patrón de los tests sale de «pruebas.patron» y los nombres se buscan en el código de
+// JS/TS, Python, Go, Rust, JVM, .NET, PHP, Ruby, Elixir, Dart, Swift y C/C++.
 // Y una orden conjunta: «comandos.probarArchivos» con los tests de todas las ramas, o «comandos.probar» si no hay
 // plantilla o no ha salido ningún test. Siempre va antes «comandos.compilar».
 //
@@ -21,14 +24,30 @@ import { ajustes, argumentos, generados, git, imprimir } from './comun.mjs'
 /** Nombres demasiado comunes para buscar quién los usa. */
 const VACIOS = new Set(['index', 'main', 'app', 'utils', 'util', 'types', 'type', 'config', 'constants', 'helpers', 'helper', 'styles', 'style', 'mod', 'lib'])
 
-const nombreBase = ruta => ruta.split('/').pop().replace(/\.(test|spec)(?=\.)/, '').replace(/\.[^.]+$/, '').replace(/\.d$/, '')
+/** Extensiones de código cuyo nombre se busca en los tests. */
+const CODIGO = /\.([cm]?[jt]sx?|vue|svelte|py|go|rs|java|kt|kts|scala|groovy|cs|fs|vb|php|rb|exs?|dart|swift|c|cc|cpp|cxx|h|hpp|m|mm|gd)$/
+
+/** Manifiestos de dependencias: si cambian, puede hacer falta instalar antes de probar. */
+const MANIFIESTOS = /(^|\/)(package\.json|pyproject\.toml|requirements[^/]*\.txt|Pipfile|Cargo\.toml|go\.mod|pom\.xml|build\.gradle(\.kts)?|[^/]+\.(cs|fs|vb)proj|composer\.json|Gemfile|mix\.exs|pubspec\.yaml|Package\.swift|deno\.jsonc?|Packages\/manifest\.json)$/
+
+/** «carrito.test.ts», «test_carrito.py», «carrito_test.go», «CarritoTests.cs» → «carrito» / «Carrito». */
+export const nombreBase = ruta =>
+  ruta
+    .split('/')
+    .pop()
+    .replace(/\.(test|spec)(?=\.)/, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/\.d$/, '')
+    .replace(/^test_/, '')
+    .replace(/_(test|spec)$/, '')
+    .replace(/(Tests?|Spec|IT)$/, '')
 
 export function testsDe(archivos, patron, repo = '.') {
   const esTest = r => patron.test(r)
   const tests = new Set(archivos.filter(esTest))
   const nombres = new Set(
     archivos
-      .filter(a => !esTest(a) && /\.[cm]?[jt]sx?$|\.vue$|\.svelte$/.test(a))
+      .filter(a => !esTest(a) && CODIGO.test(a))
       .map(nombreBase)
       .filter(n => n.length >= 3 && !VACIOS.has(n.toLowerCase())),
   )
@@ -49,7 +68,7 @@ export function analizar(rango, repo = '.', a = ajustes(repo)) {
     archivos: archivos.length,
     tests: testsDe(archivos, patron, repo),
     generados: generados(archivos, repo).length > 0,
-    dependencias: archivos.some(r => /(^|\/)package\.json$/.test(r)),
+    dependencias: archivos.some(r => MANIFIESTOS.test(r)),
   }
 }
 
@@ -67,7 +86,7 @@ export function texto(resultados, a) {
     lineas.push(`## ${r.rango} (${r.archivos} archivos)`)
     lineas.push(`- tests: ${r.tests.length > 0 ? r.tests.join(', ') : 'ninguno por nombre (los del aviso, o la tanda entera si no dice nada)'}`)
     if (r.generados) lineas.push(`- toca archivos generados: rehacerlos con ${a.comandos.regenerar ? `\`${a.comandos.regenerar}\`` : 'comandos.regenerar (no está puesto)'}`)
-    if (r.dependencias) lineas.push('- cambia package.json: instala las dependencias antes de compilar')
+    if (r.dependencias) lineas.push('- cambia un manifiesto de dependencias: instálalas antes de compilar')
   }
   if (a.comandos.compilar) lineas.push(`Compilar: ${a.comandos.compilar}`)
   lineas.push(`Probar: ${orden(resultados, a) || '(comandos.probar no está puesto)'}`)
