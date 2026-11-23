@@ -56,8 +56,13 @@ export function orcaWorktrees(repo = '.') {
   }
 }
 
+/** Dos rutas son la misma carpeta. Las mayúsculas solo se ignoran donde el sistema de archivos suele ignorarlas. */
 export const misma = (a, b) => normal(a) === normal(b)
-const normal = r => String(r).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+const PLEGAR = process.platform === 'win32' || process.platform === 'darwin'
+const normal = r => {
+  const ruta = String(r).replace(/\\/g, '/').replace(/\/+$/, '')
+  return PLEGAR ? ruta.toLowerCase() : ruta
+}
 
 /** La rama local que corresponde a un nombre largo, corto o de carpeta; '' si no hay ninguna. */
 export function resolverRama(nombre, repo = '.') {

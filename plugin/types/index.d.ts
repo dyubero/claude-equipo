@@ -73,6 +73,8 @@ export type Subida = {
   detalle: string
   /** Con qué chocaría al subirla ahora, según el último ensayo: la principal u otra rama de la franja. */
   choques?: { con: string[]; archivos: string[] }[]
+  /** El último ensayo ha fallado (sin node, git viejo…): no se sabe con qué chocaría. */
+  sinEnsayo?: boolean
   /** El estado de antes de pulsar «Solucionar», para volver con «Cancelar». */
   previo?: EstadoSubida
 }

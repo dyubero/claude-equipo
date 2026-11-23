@@ -29,16 +29,17 @@ export type Modo = 'todo' | 'seguidos' | 'indice'
 
 const BARRIDOS_ADD = new Set(['-A', '--all', '-u', '--update', '--no-ignore-removal'])
 
-/** Los prohibidos, relativos a la copia, con barras normales, en minúsculas y sin barra final. */
-export function normalizarProhibidos(prohibidos: readonly string[]): string[] {
+/** Los prohibidos, relativos a la copia, con barras normales, sin barra final y, con `plegar`, en minúsculas. */
+export function normalizarProhibidos(prohibidos: readonly string[], plegar = true): string[] {
   return prohibidos
-    .map(p => p.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '').toLowerCase())
+    .map(p => p.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, ''))
+    .map(p => (plegar ? p.toLowerCase() : p))
     .filter(p => p !== '' && p !== '.')
 }
 
 /** El prohibido (tal como está en los ajustes) que es `abs` o la contiene, o null. */
-function prohibidoDe(abs: string, copiaGit: string, prohibidos: readonly string[]): string | null {
-  const normales = normalizarProhibidos(prohibidos)
+function prohibidoDe(abs: string, copiaGit: string, prohibidos: readonly string[], plegar: boolean): string | null {
+  const normales = normalizarProhibidos(prohibidos, plegar)
   const i = normales.findIndex(p => dentroDe(abs, `${copiaGit}/${p}`))
   return i >= 0 ? (prohibidos.filter(p => normalizarProhibidos([p]).length > 0)[i] ?? null) : null
 }
@@ -64,11 +65,11 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[]): Juici
     }
     if (copiaGit === null || !hayProhibidos) return { tipo: 'pasa' }
     for (const ruta of rutas) {
-      const abs = normalizar(ruta, git.carpeta, c.home)
-      const prohibido = abs === null ? null : prohibidoDe(abs, copiaGit, prohibidos)
+      const abs = normalizar(ruta, git.carpeta, c.home, c.plegar)
+      const prohibido = abs === null ? null : prohibidoDe(abs, copiaGit, prohibidos, c.plegar)
       if (prohibido) return { tipo: 'niega', motivo: motivoProhibido(prohibido) }
     }
-    const cubre = barrido || rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c.home, prohibidos))
+    const cubre = barrido || rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c, prohibidos))
     return cubre ? { tipo: 'mirar', copia: copiaGit, modo: git.orden === 'rm' ? 'seguidos' : 'todo' } : { tipo: 'pasa' }
   }
   if (git.orden === 'commit') {
@@ -77,14 +78,14 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[]): Juici
     const todo =
       opciones.some(o => o === '--all' || (/^-[a-zA-Z]+$/.test(o) && /^-[^mFcCt]*a/.test(o))) ||
       rutas.some(r => r === '.' || r === ':/' || r === '*') ||
-      (copiaGit !== null && rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c.home, prohibidos)))
+      (copiaGit !== null && rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c, prohibidos)))
     if (enPrincipal && todo) {
       return { tipo: 'niega', motivo: 'En la copia principal no se hace git commit -a / --all ni git commit .: allí solo entran las fusiones y lo que se añade a mano.' }
     }
     if (copiaGit === null || !hayProhibidos) return { tipo: 'pasa' }
     for (const ruta of rutas) {
-      const abs = normalizar(ruta, git.carpeta, c.home)
-      const prohibido = abs === null ? null : prohibidoDe(abs, copiaGit, prohibidos)
+      const abs = normalizar(ruta, git.carpeta, c.home, c.plegar)
+      const prohibido = abs === null ? null : prohibidoDe(abs, copiaGit, prohibidos, c.plegar)
       if (prohibido) return { tipo: 'niega', motivo: motivoProhibido(prohibido) }
     }
     // Siempre se mira el índice: un archivo prohibido ya añadido entraría con este commit.
@@ -94,11 +95,12 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[]): Juici
 }
 
 /** La ruta (una carpeta que los contiene, o un patrón) puede llevarse alguno de los prohibidos. */
-function cubreProhibidos(ruta: string, carpeta: string | null, copiaGit: string, home: string, prohibidos: readonly string[]): boolean {
-  if (normalizarProhibidos(prohibidos).length === 0) return false
+function cubreProhibidos(ruta: string, carpeta: string | null, copiaGit: string, c: Copia, prohibidos: readonly string[]): boolean {
+  const normales = normalizarProhibidos(prohibidos, c.plegar)
+  if (normales.length === 0) return false
   if (/[*?[]/.test(ruta)) return true
-  const abs = normalizar(ruta, carpeta, home)
-  return abs !== null && normalizarProhibidos(prohibidos).some(p => dentroDe(`${copiaGit}/${p}`, abs) || dentroDe(abs, `${copiaGit}/${p}`))
+  const abs = normalizar(ruta, carpeta, c.home, c.plegar)
+  return abs !== null && normales.some(p => dentroDe(`${copiaGit}/${p}`, abs) || dentroDe(abs, `${copiaGit}/${p}`))
 }
 
 export function motivoProhibido(ruta: string): string {

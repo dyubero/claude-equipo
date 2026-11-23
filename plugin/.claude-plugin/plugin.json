@@ -1,6 +1,6 @@
 {
   "name": "equipo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Trabajo en paralelo con agentes en worktrees de Orca: subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo",
   "author": {
     "name": "dyubero"

@@ -86,8 +86,12 @@ su idioma.
 - **Orca**, con la CLI `orca` en el `PATH`, para los worktrees y sus agentes. Sin Orca funcionan la franja del contexto,
   las guardas, las subidas y `/ramas` (sin comentarios ni estado de agentes), pero no `encargo` ni el cierre de worktrees.
 
-Probado en Windows; las guardas entienden también rutas de Linux y macOS, pero ahí solo se han probado con las pruebas
-del repositorio.
+Funciona en Windows, macOS y Linux. Se usa a diario en Windows; en macOS y Linux lo que se comprueba con cada cambio
+son las pruebas de los scripts (repositorios de git de verdad), que pasan en los tres sistemas en GitHub Actions. Las
+rutas se comparan sin mayúsculas solo donde el sistema de archivos no las distingue (lo dice `core.ignorecase` de git).
+
+Al empezar la sesión, el plugin avisa si no encuentra `node` o si `git` es anterior a 2.38. Con `nvm` u otro gestor de
+versiones, `node` tiene que estar en el `PATH` de la terminal desde la que se abre Claude Code.
 
 ## Instalar
 
@@ -217,7 +221,8 @@ Para probar un cambio en el plugin sin reinstalarlo: `claude --plugin-dir plugin
 ## Lo que no hace
 
 - No lee un intérprete de shell entero: sigue `cd`/`Set-Location`/`pushd`, `git -C`, `--git-dir`/`--work-tree`,
-  `bash -c` y `powershell -Command`. Una ruta con una variable que no es `$HOME`/`$PWD` no se puede saber: el freno la
+  `bash -c` (también `sh`, `zsh`, `fish`, `dash` y `ksh`, y con las opciones juntas: `bash -lc`) y
+  `powershell -Command`. Una ruta con una variable que no es `$HOME`/`$PWD` no se puede saber: el freno la
   niega igualmente; la guarda de commits la deja pasar.
 - `git push . rama:main` o `git update-ref` desde un worktree no los frena.
 - La cola vive en el mod: si se recargan los plugins a mitad de una subida, las ramas quedan «en cola» sin avanzar;

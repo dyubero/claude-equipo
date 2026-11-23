@@ -54,7 +54,34 @@ test('con rutas de Linux o macOS también se niega', async ($, on) => {
   expect(negado(await $.tool.call({ tool: 'Bash', command: 'git merge main' }))).toBeUndefined()
 })
 
-test('apagado en /config, no frena', { options: { fusiones: false } }, async ($, on) => {
+test('en Linux una carpeta que solo cambia en una mayúscula es otra carpeta; en macOS (core.ignorecase), la misma', async ($, on) => {
+  preparar(on, { posix: true })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git -C /home/ana/proyectos/Tienda merge ana/carrito' }))).toBeUndefined()
+})
+
+test('con core.ignorecase, la carpeta escrita con otras mayúsculas es la principal', async ($, on) => {
+  preparar(on, { posix: true, ignoraMayusculas: true })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git -C /home/ana/proyectos/Tienda merge ana/carrito' }))).toMatch(/no se fusiona/)
+})
+
+test('zsh -c, bash -lc y fish -c se siguen como bash -c', async ($, on) => {
+  preparar(on, { posix: true })
+  for (const command of [
+    `zsh -c "git -C ${PRINCIPAL_POSIX} merge ana/carrito"`,
+    `bash -lc "cd ${PRINCIPAL_POSIX} && git merge ana/carrito"`,
+    `fish -c "git -C ${PRINCIPAL_POSIX} merge ana/carrito"`,
+  ]) {
+    expect(negado(await $.tool.call({ tool: 'Bash', command }))).toMatch(/no se fusiona/)
+  }
+})
+
+test('powershell con -exec delante de -Command se sigue leyendo', async ($, on) => {
+  preparar(on)
+  const command = `powershell -exec bypass -Command "git -C ${PRINCIPAL} merge ana/carrito"`
+  expect(negado(await $.tool.call({ tool: 'PowerShell', command }))).toMatch(/no se fusiona/)
+})
+
+test('apagado en /config, no frena',{ options: { fusiones: false } }, async ($, on) => {
   preparar(on)
   expect(negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))).toBeUndefined()
 })
@@ -133,4 +160,7 @@ test('las rutas se comparan igual escritas de cualquier forma', () => {
   expect(normalizar('/c/x', null, '/home/ana')).toBe('/c/x') // en Linux, /c es una carpeta
   expect(normalizar('src', '/home/ana/tienda', '/home/ana')).toBe('/home/ana/tienda/src')
   expect(normalizar('$OTRA/x', '/home/ana', '/home/ana')).toBeNull()
+  // Sin plegar (sistemas de archivos que distinguen mayúsculas), la ruta queda como está escrita.
+  expect(normalizar('/home/Ana/X/../y', null, '/home/Ana', false)).toBe('/home/Ana/y')
+  expect(normalizar('~/Tienda', null, '/Users/Ana', false)).toBe('/Users/Ana/Tienda')
 })

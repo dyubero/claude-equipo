@@ -23,6 +23,7 @@ import { montarCopia } from './copia'
 import type { FranjaEvento } from './dibujo'
 import { esDibujo } from './dibujo'
 import { fusionEnPrincipal, negativa } from './fusiones'
+import { faltan } from './herramientas'
 import { apuntar, apuntes } from './pendientes'
 import { cuentas, mayorDecision, misma, montarRamas, rutasDeGit, siguienteBloque, textoBloque } from './ramas'
 import { revisar } from './revision'
@@ -217,11 +218,11 @@ export const register: Register = (on, options) => {
 
     if (activas.commits) {
       const { prohibidos } = await leerAjustes($, c.raizOriginal)
-      for (const git of llamadasGit(orden, carpeta, c.home)) {
+      for (const git of llamadasGit(orden, carpeta, c.home, c.plegar)) {
         const juicio = juzgar(git, c, prohibidos)
         if (juicio.tipo === 'niega') return { deny: `equipo: ${juicio.motivo}` }
         if (juicio.tipo === 'mirar') {
-          // Las rutas normalizadas van en minúsculas: git, con la ruta tal como es (en Linux importa).
+          // Las rutas normalizadas pueden ir en minúsculas: git, con la ruta tal como es.
           const carpetaGit = juicio.copia === c.raiz ? c.raizOriginal : juicio.copia === c.principal ? c.principalOriginal : juicio.copia
           const entran = await prohibidosQueEntran($, carpetaGit, juicio.modo, prohibidos)
           if (entran.length > 0) return { deny: `equipo: ${motivoProhibido(entran.join(', '))}` }
@@ -315,6 +316,7 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
     await $.ui.toast('equipo: este proyecto aún no tiene .claude/equipo.json. Pide a Claude que lo adapte (/equipo:adapt-to-project).')
   }
   if (!conSubidas) return
+  await comprobarHerramientas($)
   // Los drivers de fusión van al .git común: en cualquier copia, para que valgan también al traer la principal.
   await instalarDrivers($)
   if (await enPrincipal($)) {
@@ -347,6 +349,12 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
       },
     })
   }
+}
+
+/** Avisa de lo que falta en el PATH: sin node o con un git viejo, las subidas fallarían sin decir por qué. */
+async function comprobarHerramientas($: EngineInterface): Promise<void> {
+  const version = (programa: string) => $.process.run([programa, '--version'], { timeoutMs: 10000 }).catch(() => null)
+  for (const linea of faltan({ node: await version('node'), git: await version('git') })) await $.ui.toast(`equipo: ${linea}.`)
 }
 
 /** La franja de las subidas, o null si no hay ninguna (register.tsx la junta con las demás). */
@@ -621,9 +629,13 @@ async function ensayarListas($: EngineInterface): Promise<void> {
   if (listas.length === 0) return
   const a = await ajustesDe($)
   const plan = await ensayar($, listas, a)
-  if (!plan) return
+  if (!plan) {
+    // Sin ensayo no se sabe con qué chocaría: se dice, en vez de dejar la franja como si no chocara con nada.
+    await update($, subidas, lista => lista.map(s => (listas.includes(s.rama) ? { ...s, sinEnsayo: true, choques: [] } : s)))
+    return
+  }
   await update($, subidas, lista =>
-    lista.map(s => (listas.includes(s.rama) ? { ...s, choques: choquesDe(plan, s.rama, a.ramaPrincipal).map(c => ({ con: c.con, archivos: c.archivos })) } : s)),
+    lista.map(s => (listas.includes(s.rama) ? { ...s, sinEnsayo: false, choques: choquesDe(plan, s.rama, a.ramaPrincipal).map(c => ({ con: c.con, archivos: c.archivos })) } : s)),
   )
 }
 
@@ -772,14 +784,18 @@ async function copia($: EngineInterface): Promise<Copia> {
   const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
   const git = await $.fs.stat(`${raiz}/.git`).catch(() => undefined)
   const lista = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd: raiz, timeoutMs: 10000 }).catch(() => undefined)
-  const leida = montarCopia(raiz, home, git?.kind === 'file', lista && lista.exitCode === 0 ? lista.stdout : '')
+  // git fija core.ignorecase al clonar según el sistema de archivos: dice si las rutas se comparan sin mayúsculas.
+  const ignora = await $.process.run(['git', 'config', '--get', 'core.ignorecase'], { cwd: raiz, timeoutMs: 10000 }).catch(() => undefined)
+  const dicho = ignora && ignora.exitCode === 0 ? ignora.stdout.trim() : ''
+  const ignoraMayusculas = dicho === 'true' ? true : dicho === 'false' ? false : null
+  const leida = montarCopia(raiz, home, git?.kind === 'file', lista && lista.exitCode === 0 ? lista.stdout : '', ignoraMayusculas)
   copias.set(raiz, leida)
   return leida
 }
 
 /** Carpeta de la sesión ahora mismo, normalizada. */
 async function carpetaActual($: EngineInterface, c: Copia): Promise<string> {
-  return normalizar(await $.session.cwd(), null, c.home) ?? c.raiz
+  return normalizar(await $.session.cwd(), null, c.home, c.plegar) ?? c.raiz
 }
 
 async function prohibidosQueEntran($: EngineInterface, carpeta: string, modo: Modo, prohibidos: readonly string[]): Promise<string[]> {

@@ -18,7 +18,7 @@ const OPCIONES_CON_VALOR = new Set(['-m', '-F', '-s', '-X', '--strategy', '--str
 /** La fusión en la copia principal que lanza la orden, o null si no lanza ninguna. */
 export function fusionEnPrincipal(orden: string, carpeta: string, c: Copia): Fusion | null {
   if (!c.esWorktree) return null
-  for (const git of llamadasGit(orden, carpeta, c.home)) {
+  for (const git of llamadasGit(orden, carpeta, c.home, c.plegar)) {
     if (git.orden !== 'merge' && git.orden !== 'pull') continue
     if (git.args.some(a => SALIDAS.has(a))) continue
     if (git.carpeta !== null && git.carpeta !== c.principal) continue

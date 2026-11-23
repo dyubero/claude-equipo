@@ -5,7 +5,10 @@ import type { EstadoSubida, PanelRamas, Subida } from '../types'
 export function textoEstado(s: Subida): string {
   switch (s.estado) {
     case 'lista':
-      return s.porRevisar.length > 0 ? `lista para subir · ${s.porRevisar.length} por revisar` : 'lista para subir'
+      return (
+        (s.porRevisar.length > 0 ? `lista para subir · ${s.porRevisar.length} por revisar` : 'lista para subir') +
+        (s.sinEnsayo ? ' · sin ensayo (no sé con qué chocaría)' : '')
+      )
     case 'en-cola':
       return 'en cola'
     case 'fusionando':

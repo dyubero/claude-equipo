@@ -33,7 +33,17 @@ const PORCELANA = `worktree ${PRINCIPAL}\nHEAD 1\nbranch refs/heads/main\n\nwork
 const ORCA = JSON.stringify({ ok: true, result: { worktrees: [{ path: CARRITO, displayName: 'carrito', comment: 'D31-D40' }] } })
 const CON_BACKLOG = JSON.stringify({ backlog: { activo: true }, decisiones: { activo: true }, comandos: { regenerar: 'npm install' } })
 
-type Escena = { enPrincipal?: boolean; chocan?: string[]; plan?: unknown; fusionadas?: string[]; ajustes?: string | null }
+type Escena = {
+  enPrincipal?: boolean
+  chocan?: string[]
+  plan?: unknown
+  fusionadas?: string[]
+  ajustes?: string | null
+  /** `node` no está en el PATH. */
+  sinNode?: boolean
+  /** Lo que contesta `git --version`. */
+  git?: string
+}
 type Enviado = { to: string; text: string }
 
 const BANDA = {
@@ -74,6 +84,8 @@ function preparar(on: On, escena: Escena = {}) {
     const argv = [...e.argv]
     r.ordenes.push(argv)
     const sale = (exitCode: number, stdout = '', stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
+    if (argv[0] === 'node' && escena.sinNode) return { deny: 'spawn node ENOENT' }
+    if (argv[0] === 'git' && argv[1] === '--version') return sale(0, escena.git ?? 'git version 2.52.0\n')
     if (argv[0] === 'node' && (argv[1] ?? '').endsWith('/scripts/ensayo.mjs')) return escena.plan ? sale(0, JSON.stringify(escena.plan)) : sale(1, '', 'sin ensayo')
     if (argv[0] === 'node') return sale(0, 'drivers ya al día')
     if (argv[1] === 'merge-base' && argv[2] === '--is-ancestor') {
@@ -193,6 +205,22 @@ test('con ajustes no lo recuerda', NO_CONTEXTO, async ($, on) => {
   const r = preparar(on)
   await arrancar($)
   expect(r.toasts).toEqual([])
+})
+
+test('sin node en el PATH lo dice al empezar, y la franja avisa de que no hay ensayo', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { sinNode: true })
+  await arrancar($)
+  expect(r.toasts.length).toBe(1)
+  expect(r.toasts[0]).toMatch(/no encuentro node en el PATH/)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /carrito \(aaa1111\) · lista para subir · sin ensayo/ })).toBeDefined()
+})
+
+test('con un git anterior a 2.38 dice que el ensayo no funciona', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { git: 'git version 2.30.1\n' })
+  await arrancar($)
+  expect(r.toasts).toEqual(['equipo: git 2.30 es anterior a 2.38: el ensayo de las subidas (git merge-tree) no funciona.'])
 })
 
 test('con las subidas apagadas, el aviso llega a Claude y no se instala nada', { options: { subidas: false, contexto: false } }, async ($, on) => {
