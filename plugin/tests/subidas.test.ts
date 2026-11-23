@@ -10,6 +10,15 @@ import { avisoDeSubida, choquesDe, codigosConPrefijo, codigosSinRenumerar, leerP
 const PRINCIPAL = 'C:/Users/ana/proyectos/tienda'
 const CARRITO = 'C:/Users/ana/orca/workspaces/tienda/carrito'
 
+// En Linux y macOS una ruta «C:/…» no es absoluta, y Claude Code la resuelve contra la carpeta actual: aquí se le
+// quita lo que lleve delante, para que las rutas de mentira valgan igual en los tres sistemas.
+const limpia = (ruta: string) => {
+  const p = ruta.replace(/\\/g, '/')
+  const i = p.toLowerCase().indexOf('c:/users/ana')
+  return i > 0 ? p.slice(i) : p
+}
+
+
 const LISTA_CARRITO = [
   'La rama carrito está lista para subir (aaa1111)',
   'Sesión: carrito-e4',
@@ -78,7 +87,7 @@ function preparar(on: On, escena: Escena = {}) {
     return { isDelivered: true }
   })
   on('session.receive', ($, e) => ({ text: e.text }))
-  on('fs.stat', ($, e) => ({ value: { kind: e.path.replace(/\\/g, '/').toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.stat', ($, e) => ({ value: { kind: limpia(e.path).toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('.claude/equipo.json') && ajustes !== null ? { value: ajustes } : { deny: 'no existe' }))
   on('process.run', ($, e) => {
     const argv = [...e.argv]

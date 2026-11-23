@@ -12,9 +12,9 @@
 //
 // El backlog es un documento Markdown con tablas cuya primera celda es el código: «| T12 | … |».
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 import { ajustes, argumentos, git, imprimir, raiz } from './comun.mjs'
 
@@ -123,4 +123,13 @@ export function main(argv) {
   return 0
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) process.exitCode = main(process.argv.slice(2))
+// Se compara por la ruta real: con un enlace simbólico por medio (en macOS, /var es /private/var), node da a
+// import.meta.url la ruta resuelta y a process.argv[1] la escrita, y sin esto el script acabaría sin hacer nada.
+const real = ruta => {
+  try {
+    return realpathSync.native(ruta)
+  } catch {
+    return resolve(ruta)
+  }
+}
+if (process.argv[1] && real(fileURLToPath(import.meta.url)) === real(process.argv[1])) process.exitCode = main(process.argv.slice(2))

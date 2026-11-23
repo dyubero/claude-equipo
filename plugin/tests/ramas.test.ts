@@ -11,6 +11,15 @@ const PRINCIPAL = 'C:/Users/ana/proyectos/tienda'
 const CARRITO = 'C:/Users/ana/orca/workspaces/tienda/carrito'
 const LOGIN = 'C:/Users/ana/orca/workspaces/tienda/login'
 
+// En Linux y macOS una ruta «C:/…» no es absoluta, y Claude Code la resuelve contra la carpeta actual: aquí se le
+// quita lo que lleve delante, para que las rutas de mentira valgan igual en los tres sistemas.
+const limpia = (ruta: string) => {
+  const p = ruta.replace(/\\/g, '/')
+  const i = p.toLowerCase().indexOf('c:/users/ana')
+  return i > 0 ? p.slice(i) : p
+}
+
+
 const PORCELANA =
   `worktree ${PRINCIPAL}\nHEAD 1\nbranch refs/heads/main\n\n` +
   `worktree ${CARRITO}\nHEAD 2\nbranch refs/heads/ana/carrito\n\n` +
@@ -49,9 +58,9 @@ function preparar(on: On, { enPrincipal = true, ajustes = CON_DECISIONES } = {})
   on('tool.register', ($, e) => ({ value: { tool: `mcp__equipo__${e.name}` } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.toast', () => ({ value: undefined }))
-  on('fs.stat', ($, e) => ({ value: { kind: e.path.replace(/\\/g, '/').toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.stat', ($, e) => ({ value: { kind: limpia(e.path).toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', ($, e) => {
-    const p = e.path.replace(/\\/g, '/')
+    const p = limpia(e.path)
     if (r.escrito.has(p)) return { value: r.escrito.get(p) as string }
     if (p.endsWith('.claude/equipo.json')) return { value: ajustes }
     if (p.endsWith('docs/pendientes.md')) return { value: PENDIENTES }
@@ -61,7 +70,7 @@ function preparar(on: On, { enPrincipal = true, ajustes = CON_DECISIONES } = {})
     return { deny: 'no existe' }
   })
   on('fs.write', ($, e) => {
-    r.escrito.set(e.path.replace(/\\/g, '/'), e.text)
+    r.escrito.set(limpia(e.path), e.text)
     return { value: undefined }
   })
   on('process.run', ($, e) => {

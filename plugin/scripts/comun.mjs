@@ -2,7 +2,7 @@
 // Solo Node (18 o posterior) y git: sin dependencias.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { mezclar, POR_DEFECTO } from './por-defecto.mjs'
@@ -60,7 +60,13 @@ export function orcaWorktrees(repo = '.') {
 export const misma = (a, b) => normal(a) === normal(b)
 const PLEGAR = process.platform === 'win32' || process.platform === 'darwin'
 const normal = r => {
-  const ruta = String(r).replace(/\\/g, '/').replace(/\/+$/, '')
+  // La ruta real, si existe: en Windows una carpeta puede venir con su nombre corto (RUNNER~1) y en macOS por un
+  // enlace (/var y /private/var), y git da siempre la real.
+  let real = String(r)
+  try {
+    real = realpathSync.native(real)
+  } catch {}
+  const ruta = real.replace(/\\/g, '/').replace(/\/+$/, '')
   return PLEGAR ? ruta.toLowerCase() : ruta
 }
 

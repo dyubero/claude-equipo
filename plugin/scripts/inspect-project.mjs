@@ -13,10 +13,10 @@
 // - questions: what the script cannot decide. The agent asks the user, in the user's language.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 import { AJUSTES, argumentos, git, imprimir, POR_DEFECTO, raiz } from './comun.mjs'
 
@@ -699,4 +699,13 @@ export function main(argv) {
   return 0
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) process.exitCode = main(process.argv.slice(2))
+// Se compara por la ruta real: con un enlace simbólico por medio (en macOS, /var es /private/var), node da a
+// import.meta.url la ruta resuelta y a process.argv[1] la escrita, y sin esto el script acabaría sin hacer nada.
+const real = ruta => {
+  try {
+    return realpathSync.native(ruta)
+  } catch {
+    return resolve(ruta)
+  }
+}
+if (process.argv[1] && real(fileURLToPath(import.meta.url)) === real(process.argv[1])) process.exitCode = main(process.argv.slice(2))
