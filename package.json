@@ -2,7 +2,7 @@
   "name": "claude-equipo",
   "private": true,
   "type": "module",
-  "description": "Plugin de Claude Code para trabajar con varios agentes, cada uno en su worktree (con Orca o con git a secas)",
+  "description": "Claude Code plugin for working with several agents, each in its own worktree (with Orca or plain git)",
   "license": "MIT",
   "engines": {
     "node": ">=22"

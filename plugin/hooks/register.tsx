@@ -1,6 +1,6 @@
 // Plugin equipo: mods para trabajar con varios agentes, cada uno en su worktree (con Orca o con git a secas).
 //   contexto — franja con el contexto usado y libre, y el botón «Compactar».
-//   subidas  — en la copia principal, el aviso «La rama X está lista para subir» sale en la franja con «Subir»,
+//   subidas  — en la copia principal, el aviso de un agente («equipo:lista <rama> <commit>») sale en la franja con «Subir»,
 //              «Solucionar» y «Borrar»; el mod ensaya con git merge-tree, fusiona en cola y pide a Claude una sola
 //              comprobación del lote, que devuelve con la herramienta resultado_lote.
 //   /ramas, /reservar y /pendiente — panel de worktrees, bloques de decisiones y apuntes.
@@ -22,12 +22,13 @@ import { atom, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { ARCHIVO, problemasDeTexto } from './ajustes'
-import { CONTEXTO_INICIAL, enPrincipal, scripts } from './base'
+import { ajustesDe, CONTEXTO_INICIAL, enPrincipal, scripts } from './base'
 import { recibirSubida } from './cola'
 import { esDibujo } from './dibujo'
 import { franjaSubidas, leerContexto, lineaContexto } from './franja'
 import { guardar } from './guarda'
 import { faltan } from './herramientas'
+import { tr } from './idioma'
 import { resultado } from './lote'
 import { dibujarPanel, ordenPendiente, ordenRamas, ordenReservar, PANE } from './panel'
 import { avisoDeSubida, HERRAMIENTA } from './subidas'
@@ -90,14 +91,14 @@ export const register: Register = (on, options) => {
         if (!r.rama) continue
         lineas.push(await resultado($, r.rama.trim(), r.ok === true, (r.motivo ?? '').trim(), (r.sesion ?? '').trim()))
       }
-      return { result: lineas.length > 0 ? lineas.join('\n') : 'No ha llegado ninguna rama.' }
+      return { result: lineas.length > 0 ? lineas.join('\n') : tr()('resultado.ninguna') }
     })
 
     on('session.receive', async ($, e, next) => {
       const lista = avisoDeSubida(e.text)
       if (!lista || !(await enPrincipal($))) return next(e)
       await recibirSubida($, lista, e.text)
-      return { consumed: `equipo: ${lista.rama} lista para subir, en la franja` }
+      return { consumed: tr()('subida.consumida', { rama: lista.rama }) }
     }).catch(($, e, next) => next(e))
   }
 
@@ -118,7 +119,7 @@ export const register: Register = (on, options) => {
     // Si la guarda falla, una fusión no pasa sin mirarla; lo demás sigue, para no bloquear la sesión entera.
     const orden = String((e as { command?: unknown }).command ?? '')
     return activas.fusiones && /\bgit\b[\s\S]*\b(merge|pull)\b/.test(orden)
-      ? { deny: `equipo: la guarda de fusiones ha fallado (${next.error.message}); no dejo pasar una fusión sin mirarla.` }
+      ? { deny: tr()('guarda.fallo', { error: next.error.message }) }
       : next(e)
   })
 }
@@ -127,22 +128,26 @@ export const register: Register = (on, options) => {
 
 /** Al empezar la sesión: los comandos y, con las subidas, los drivers de fusión y resultado_lote (en la principal). */
 async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<void> {
-  await $.command.register({ name: 'ramas', description: 'Panel con los worktrees, su bloque de decisiones y sus agentes (equipo)' })
+  // Lo primero, los ajustes: dejan puesto el idioma de todo lo que se escribe después.
+  await ajustesDe($).catch(() => null)
+  const t = tr()
+  await $.command.register({ name: 'ramas', description: t('ramas.descripcion') })
   await $.command.register({
     name: 'reservar',
-    description: 'Siguiente bloque libre de decisiones; con el nombre de un worktree, se lo reserva (equipo)',
+    description: t('reservar.descripcion'),
     argumentHint: '[worktree]',
   })
-  await $.command.register({ name: 'pendiente', description: 'Apunta un pendiente en el documento de pendientes (equipo)', argumentHint: '<texto>' })
+  await $.command.register({ name: 'pendiente', description: t('pendiente.descripcion'), argumentHint: t('pendiente.argumento') })
   // Sin ajustes valen los de por defecto (npm): en la principal se le recuerda al usuario que lo adapte a su proyecto.
   const propios = await $.fs.read(`${await $.session.root()}/${ARCHIVO}`).catch(() => null)
   if (await enPrincipal($)) {
     if (typeof propios !== 'string') {
-      await $.ui.toast('equipo: este proyecto aún no tiene .claude/equipo.json. Pide a Claude que lo adapte (/equipo:adapt-to-project).')
+      await $.ui.toast(t('inicio.sinAjustes'))
     } else {
       const problemas = problemasDeTexto(propios)
       if (problemas.length > 0) {
-        await $.ui.toast(`equipo: ${ARCHIVO} tiene ${problemas.length === 1 ? 'un problema' : `${problemas.length} problemas`}: ${problemas[0]}${problemas.length > 1 ? '…' : ''} (node "${scripts($)}/ajustes.mjs" --comprobar)`)
+        const orden = `node "${scripts($)}/ajustes.mjs" --comprobar`
+        await $.ui.toast(t(problemas.length === 1 ? 'inicio.unProblema' : 'inicio.problemas', { archivo: ARCHIVO, n: problemas.length, problema: problemas[0] ?? '', orden }))
       }
     }
   }
@@ -153,12 +158,7 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
   if (await enPrincipal($)) {
     await $.tool.register({
       name: HERRAMIENTA,
-      description:
-        'Plugin equipo: resultado de la comprobación del lote de ramas que el mod acaba de subir a la rama principal. ' +
-        'Una entrada por rama: ok=true si compila y sus pruebas pasan (el mod avisa al agente y cierra su worktree), ' +
-        'ok=false con el motivo si algo falla (el mod se lo manda al agente para que lo arregle y vuelva a avisar). ' +
-        'La rama puede ir con su nombre largo (usuario/x) o corto (x), y también vale una rama fusionada a mano que no ' +
-        'está en la franja: entonces conviene dar la sesión de su agente (ListAgents) en sesion para avisarle.',
+      description: t('herramienta.descripcion'),
       inputSchema: {
         type: 'object',
         properties: {
@@ -169,8 +169,8 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
               properties: {
                 rama: { type: 'string' },
                 ok: { type: 'boolean' },
-                motivo: { type: 'string', description: 'Qué ha fallado (solo si ok es false).' },
-                sesion: { type: 'string', description: 'Sesión del agente (ListAgents), si la rama no está en la franja.' },
+                motivo: { type: 'string', description: t('herramienta.motivo') },
+                sesion: { type: 'string', description: t('herramienta.sesion') },
               },
               required: ['rama', 'ok'],
             },
@@ -185,7 +185,8 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
 /** Avisa de lo que falta en el PATH: sin node o con un git viejo, las subidas fallarían sin decir por qué. */
 async function comprobarHerramientas($: EngineInterface): Promise<void> {
   const version = (programa: string) => $.process.run([programa, '--version'], { timeoutMs: 10000 }).catch(() => null)
-  for (const linea of faltan({ node: await version('node'), git: await version('git') })) await $.ui.toast(`equipo: ${linea}.`)
+  const t = tr()
+  for (const linea of faltan({ node: await version('node'), git: await version('git') }, t)) await $.ui.toast(t('inicio.falta', { linea }))
 }
 
 /** Apunta en el .git común los drivers de fusión y los atributos de .claude/equipo.json. */

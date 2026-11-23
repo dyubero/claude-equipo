@@ -122,7 +122,7 @@ describe('worktrees con git a secas', () => {
     assert.equal(r.rama, 'login')
     assert.equal(r.bloque, '')
     assert.match(leer(r.ruta, '.claude/equipo-encargo.md'), /\n---\nWhen you finish, follow the skill equipo:lista-para-subir\. Do not merge into main yourself\.\n$/)
-    assert.match(r.orden, /^cd ".*login" && claude "Read the file \.claude\/equipo-encargo\.md in this folder/)
+    assert.match(r.orden, /^cd ".*login" && claude "Read the file \.claude\/equipo-encargo\.md in this folder and do the task it describes\. If it is missing, it is the same as .*login\.md"$/)
   })
 
   test('cerrar: se niega si la rama lleva algo que main no tiene; ya en main, quita worktree, rama y reserva', () => {

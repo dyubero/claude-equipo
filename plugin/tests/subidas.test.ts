@@ -5,6 +5,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { ajustesDeTexto } from '../hooks/ajustes'
 import { revisar } from '../hooks/revision'
+import { textos } from '../textos/indice.mjs'
 import { avisoDeSubida, choquesDe, codigosConPrefijo, codigosSinRenumerar, leerPlan, mensajeFusion, peticionLote } from '../hooks/subidas'
 
 const PRINCIPAL = 'C:/Users/ana/proyectos/tienda'
@@ -156,9 +157,27 @@ test('el aviso «lista para subir» da la rama, el commit, la sesión, el resume
   expect(avisoDeSubida('La rama x está fusionada en main (abc1234)')).toBeNull()
 })
 
+test('el aviso se reconoce por la línea «equipo:lista <rama> <commit>», con las etiquetas en inglés o en español', () => {
+  const aviso = ['equipo:lista ana/cart 3f2a9c1', 'Session: cart-4e', 'Summary: card payments in the cart', 'What changes: src/cart.ts', 'To review:', '- untested in Safari', '', 'Test: npm test'].join('\n')
+  expect(avisoDeSubida(aviso)).toEqual({ rama: 'ana/cart', commit: '3f2a9c1', sesion: 'cart-4e', resumen: 'card payments in the cart', porRevisar: ['untested in Safari'] })
+  expect(avisoDeSubida('equipo:lista `carrito` `aaa1111`\nSesión: carrito-e4\nResumen: descuentos\nPor revisar: nada')).toEqual({
+    rama: 'carrito',
+    commit: 'aaa1111',
+    sesion: 'carrito-e4',
+    resumen: 'descuentos',
+    porRevisar: [],
+  })
+  expect(avisoDeSubida('equipo:lista cart abc1234\nTo review: none')?.porRevisar).toEqual([])
+  // La línea tiene que ser la del aviso, no una cita de las instrucciones.
+  expect(avisoDeSubida('vuelve a avisar con la línea «equipo:lista carrito <commit>»')).toBeNull()
+  expect(avisoDeSubida('Avisa con equipo:lista cuando acabes')).toBeNull()
+})
+
 test('el mensaje de la fusión y los códigos con prefijo', () => {
   expect(mensajeFusion('carrito', 'descuentos.')).toBe('Fusión de carrito en main: descuentos')
   expect(mensajeFusion('carrito', '', 'develop')).toBe('Fusión de carrito en develop')
+  expect(mensajeFusion('cart', 'discounts.', 'main', textos('en'))).toBe('Merge cart into main: discounts')
+  expect(mensajeFusion('cart', 'discounts', 'main', textos('en', { 'fusion.mensaje': 'feat({rama}): {resumen}' }))).toBe('feat(cart): discounts')
   expect(codigosConPrefijo('carrito', '+++ b/BACKLOG.md\n+| carrito-1 | a |\n+ver carrito-T2\n+++ b/DESIGN.md\n+carrito-9\n')).toEqual(['carrito-1', 'carrito-T2'])
 })
 
@@ -323,7 +342,7 @@ test('«Solucionar» pide una indicación y manda al agente lo de «Por revisar�
   expect(r.enviados[0]?.to).toBe('login-87')
   expect(r.enviados[0]?.text).toMatch(/- sin probar en Safari/)
   expect(r.enviados[0]?.text).toMatch(/Indicación del usuario: prueba también en Firefox/)
-  expect(r.enviados[0]?.text).toMatch(/está lista para subir \(<commit>\)/)
+  expect(r.enviados[0]?.text).toMatch(/vuelve a avisar con la línea «equipo:lista login <commit>»/)
   expect(await ui.find({ type: 'Text', text: /login .* arreglo pedido al agente/ })).toBeDefined()
 })
 
@@ -409,6 +428,29 @@ test('unos ajustes con una clave que no existe se avisan al empezar', NO_CONTEXT
   expect(r.toasts.length).toBe(1)
   expect(r.toasts[0]).toMatch(/\.claude\/equipo\.json tiene un problema: «comandos\.compliar» no es un ajuste/)
   expect(r.toasts[0]).toMatch(/ajustes\.mjs" --comprobar/)
+})
+
+test('con idioma «en», la franja, los avisos a los agentes y la petición del lote salen en inglés', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "idioma": "en", "comandos": { "compilar": "npm run build", "probar": "npm test" } }', chocan: ['login'] })
+  await arrancar($)
+  await recibir($, 'equipo:lista carrito aaa1111\nSession: carrito-e4\nSummary: cart discounts\nTest: npx vitest run src/cart.test.ts')
+  await recibir($, 'equipo:lista login bbb2222\nSession: login-87\nSummary: magic link\nTo review:\n- untested in Safari')
+  expect(r.toasts).toContain('login ready to merge · 1 to review')
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /carrito \(aaa1111\) · ready to merge/ })).toBeDefined()
+  expect((await ui.find({ key: 'subir-carrito' }))?.props).toMatchObject({ label: 'Merge' })
+  expect((await ui.find({ key: 'subir-todas' }))?.props).toMatchObject({ label: 'Merge all (2)' })
+  await ui.press({ key: 'subir-todas' })
+  expect(r.ordenes).toContainEqual(['git', 'merge', '--no-ff', 'carrito', '-m', 'Merge carrito into main: cart discounts'])
+  expect(r.enviados.find(m => m.to === 'login-87')?.text).toMatch(/^Merging branch login into main conflicted with what was already in/)
+  expect(r.enviados.find(m => m.to === 'login-87')?.text).toMatch(/notify again with the line "equipo:lista login <commit>"/)
+  expect(r.prompts[0]).toMatch(/^Check together in main the branches the equipo plugin has just merged: carrito\. Follow the skill equipo:comprobar-lote\./)
+  expect(r.prompts[0]).toMatch(/✔ it is a merge/)
+  expect(r.prompts[0]).toMatch(/1\. Tests for the batch, once: `npm run build`; then the tests of what they touch/)
+  expect(r.prompts[0]).toMatch(/## What to do/)
+  const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
+  expect(texto).toMatch(/carrito: checked, agent notified and worktree closed\./)
+  expect(r.enviados.find(m => m.to === 'carrito-e4')?.text).toMatch(/^Branch carrito is merged into main/)
 })
 
 const LISTA_PAGOS = 'La rama ana/pagos está lista para subir (ccc3333)\nSesión: pagos-11\nResumen: pagos con tarjeta.'

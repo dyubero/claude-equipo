@@ -6,6 +6,7 @@ import type { EngineInterface } from 'claude-code'
 import type { Contexto, PanelRamas, Subida } from '../types'
 import type { Ajustes } from './ajustes'
 import { ajustesDeTexto, ARCHIVO } from './ajustes'
+import { ponerIdioma } from './idioma'
 
 // ---------------------------------------------------------------- estado
 
@@ -31,8 +32,11 @@ export async function leerAjustes($: EngineInterface, raiz: string): Promise<Aju
   return ajustesDeTexto(await $.fs.read(`${raiz}/${ARCHIVO}`).catch(() => null), usuario)
 }
 
+/** Los ajustes de la sesión. De paso deja puesto su idioma para los textos (idioma.ts). */
 export async function ajustesDe($: EngineInterface): Promise<Ajustes> {
-  return leerAjustes($, await $.session.root())
+  const a = await leerAjustes($, await $.session.root())
+  ponerIdioma(a)
+  return a
 }
 
 export async function enPrincipal($: EngineInterface): Promise<boolean> {

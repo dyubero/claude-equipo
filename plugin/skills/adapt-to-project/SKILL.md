@@ -25,7 +25,9 @@ Two principles shape everything below:
 
 The plugin's scripts are in `../../scripts` relative to this skill's folder (the "Base directory" shown when the skill
 loads); below they are written `<scripts>`. Run them with `node` (22 or later). `inspect-project.mjs` prints English;
-the plugin's other scripts and its on-screen texts are in Spanish — read them, don't relay them verbatim.
+the plugin's other scripts print Spanish — read them, don't relay them verbatim. What the plugin shows on screen and
+the messages it sends to agents follow the `idioma` setting: Spanish for `es`, English for `en` and for any language
+it has no catalogue for.
 
 ## 1. Check where you are
 
@@ -154,10 +156,10 @@ is none; use AGENTS.md if that is what the project uses). Translate it into the 
 `<placeholders>` with this project's values, drop the lines about decisions or backlog if they are off, and match the
 tone of the existing file. Show the user the final section before writing it.
 
-Two kinds of text stay exactly as they are, whatever the language: the skill names, and the notice
-`La rama <branch> está lista para subir (<commit>)` with the button labels **Subir** and **Solucionar**. The plugin
-recognises the notice by that exact sentence and draws those buttons itself; translating them in CLAUDE.md would only
-confuse the agents. A short gloss in the team's language next to them is fine.
+Some text stays exactly as it is, whatever the language: the skill names, the first line of the notice
+(`equipo:lista <branch> <commit>`) and its labels (`Session:`, `Summary:`, `To review:`). The plugin reads the notice
+by that line and those labels. The buttons are drawn by the plugin in its own language: **Subir** and **Solucionar**
+with `idioma` `es`, **Merge** and **Fix** otherwise — name them in CLAUDE.md as the team will see them.
 
 ## 7. Commit
 
@@ -174,7 +176,8 @@ Tell the user, briefly and in their language:
 - which commands you ran and whether they passed, and anything left untested;
 - how to start: in this session they describe a task, the `encargo` skill launches it into its own worktree and agent
   (with Orca, in Orca; without it, in a new tab or window of their terminal, or with a command to paste if the
-  launcher is `manual`); when that agent finishes, its branch appears above the prompt with **Subir**;
+  launcher is `manual`); when that agent finishes, its branch appears above the prompt with a merge button
+  (**Subir** in Spanish, **Merge** in English);
 - that every piece can be switched off in `/config` (plugin `equipo`), and that they can ask you to change the
   settings at any time.
 
@@ -190,6 +193,6 @@ Tell the user, briefly and in their language:
 | `git add -A` / `git add .` | Rejected by the guard in the main copy; add files one by one |
 | Writing the settings in a worktree | Other worktrees never see them; they belong on the main branch |
 | Pasting the English template into a Spanish (or any other) CLAUDE.md | Agents get mixed-language instructions; translate it |
-| Translating the notice sentence or the button names | The plugin no longer recognises the notice; keep them verbatim |
+| Translating the notice's first line or its labels | The plugin no longer recognises the notice; keep them verbatim |
 | Fixing a broken project without asking | Unrelated changes inside the setup commit; ask, and fix in a separate commit |
 | Writing equipo.json through a heredoc | Backslashes in `pruebas.patron` get lost: invalid JSON |

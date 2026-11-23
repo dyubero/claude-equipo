@@ -158,6 +158,18 @@ test('/pendiente apunta con fecha y rama, y sin texto lista lo apuntado', SIN_FR
   expect(lista.text).toMatch(/- 2026-10-21 \(ana\/carrito\): probar el carrito vacío/)
 })
 
+test('con idioma «en», /ramas, /reservar y /pendiente hablan inglés y el documento de pendientes se escribe en inglés', SIN_FRANJAS, async ($, on) => {
+  const r = preparar(on, { enPrincipal: false, ajustes: '{ "idioma": "en", "decisiones": { "activo": true }, "pendientes": "docs/todo.md" }' })
+  await arrancar($, CARRITO)
+  expect((await $.command.run({ command: 'ramas', args: '' } as never)).text).toMatch(/★ main · main copy · agent working\n● carrito · D15-D24 · \+5\/−2 · agent done\n✔ login · all in the main branch · agent working\nNext free block: D25-D34/)
+  expect((await $.command.run({ command: 'reservar', args: 'login' } as never)).text).toBe('Blocks are reserved from the main copy. Next free block: D25-D34.')
+  expect((await $.command.run({ command: 'pendiente', args: 'try the empty cart' } as never)).text).toBe('Noted in docs/todo.md (Quick notes): try the empty cart')
+  expect(r.escrito.get(`${CARRITO}/docs/todo.md`)).toBe(
+    '# Pending\n\nUpdated on 2026-10-21.\n\n## Quick notes\n\nNoted with `/pendiente`. Once done or launched, remove it from here or move it to its section.\n\n- 2026-10-21 (ana/carrito): try the empty cart\n\n',
+  )
+  expect((await $.command.run({ command: 'pendiente', args: '' } as never)).text).toBe('Quick notes in docs/todo.md:\n- 2026-10-21 (ana/carrito): try the empty cart')
+})
+
 test('apuntar y apuntes', () => {
   const uno = apuntar('# P\n', 'a', '2026-01-01', '')
   const dos = apuntar(uno, 'b', '2026-01-02', 'x')

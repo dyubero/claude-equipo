@@ -1,6 +1,24 @@
 # equipo: portable, sin depender de Orca y modificable
 
-Fecha: 2026-11-23. Estado: diseño pendiente de revisión.
+Fecha: 2026-11-23. Estado: aprobado e implementado (las cuatro fases, versiones 0.1.1 a 0.4.0).
+
+## Lo que cambió al implementarlo
+
+- **El lanzador por defecto es `auto`, no `manual`:** se detecta en cada máquina, así que no hace falta guardarlo en
+  los ajustes del proyecto ni esperar a los de usuario.
+- **El encargo se escribe dentro del worktree** (`.claude/equipo-encargo.md`, que git ignora por `info/exclude`),
+  además de la copia en el `.git` común: el agente lo lee sin salir de su carpeta. El script le añade al final el
+  bloque de decisiones reservado y cómo se entrega, y hace él mismo la reserva al crear.
+- **El estado (`atom`) se declara en cada archivo del mod que lo usa**, y todo lo que recibe `$` desde otro archivo es
+  una declaración `function`: lo exige el motor de los mods. `register.tsx` quedó en el cableado, como estaba previsto.
+- **Las etiquetas del aviso van en inglés** (`Session:`, `Summary:`, `To review:`) en cualquier idioma; las españolas
+  y la frase antigua se siguen leyendo.
+- **Los títulos de `/config` están en inglés**: son fijos, no pueden seguir al ajuste `idioma`.
+- **Queda en español** lo que imprimen los scripts y los mensajes de `ajustes.mjs --comprobar`.
+- **La CI encontró un fallo real en macOS** que no estaba en el diseño: con el repositorio tras un enlace simbólico,
+  el driver de fusión salía sin hacer nada y se perdía lo que añadía la otra rama. Los scripts se reconocen ahora por
+  su ruta real.
+- **Sin probar contra terminales de verdad:** los lanzadores `tmux`, `wt`, `terminal` e `iterm`.
 
 ## Objetivo
 

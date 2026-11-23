@@ -8,6 +8,7 @@ import { ajustesDe, CONTEXTO_INICIAL, SUBIDAS_INICIAL } from './base'
 import { borrar, mandarSolucion, marcar, poner, subir } from './cola'
 import { color, miles, texto } from './contexto'
 import type { FranjaEvento } from './dibujo'
+import { tr } from './idioma'
 import { corto } from './subidas'
 import { borrable, colorSubida, puedeSolucionar, textoEstado } from './vista'
 
@@ -34,17 +35,22 @@ export async function compactar($: EngineInterface): Promise<void> {
   try {
     const hecho = await $.session.compact()
     if ('skip' in hecho) {
-      $.ui.toast(`No se ha compactado: ${hecho.skip}`)
+      $.ui.toast(tr()('contexto.noCompactado', { motivo: hecho.skip }))
     } else {
       // Con tokensAfter la cifra se pone al día ya; si no, con la próxima respuesta.
       const despues = hecho.tokensAfter
       await update($, contexto, actual =>
         despues === undefined ? { ...actual, compactado: true } : { ...actual, tokens: despues, compactado: false },
       )
-      $.ui.toast(`Compactado${hecho.tokensBefore !== undefined && despues !== undefined ? `: de ${miles(hecho.tokensBefore)} a ${miles(despues)}` : ''}`)
+      const t = tr()
+      $.ui.toast(
+        hecho.tokensBefore !== undefined && despues !== undefined
+          ? t('contexto.hechoCifras', { antes: miles(hecho.tokensBefore, t), despues: miles(despues, t) })
+          : t('contexto.hecho'),
+      )
     }
   } catch (error) {
-    $.ui.toast(`No se ha podido compactar (¿hay un turno en marcha?): ${String(error).slice(0, 120)}`)
+    $.ui.toast(tr()('contexto.fallo', { error: String(error).slice(0, 120) }))
   } finally {
     await update($, contexto, actual => ({ ...actual, compactando: false }))
   }
@@ -54,13 +60,14 @@ export async function compactar($: EngineInterface): Promise<void> {
 export async function lineaContexto($: EngineInterface, e: FranjaEvento): Promise<RenderNode | null> {
   const { Box, Text, Button } = $.ui.resolve(e)
   const c = await read($, contexto)
+  const t = tr()
   return (
     <Box key="contexto" flexDirection="row" gap={1} width={e.props.bodyColumns}>
       <Text color={color(c)} wrap="truncate-end">
-        {texto(c)}
+        {texto(c, t)}
       </Text>
       {c.tokens !== null && !c.compactando && !e.props.isWorking ? (
-        <Button key="compactar" label="Compactar" onPress={() => compactar($)} />
+        <Button key="compactar" label={t('contexto.boton')} onPress={() => compactar($)} />
       ) : null}
     </Box>
   )
@@ -76,6 +83,7 @@ export async function franjaSubidas($: EngineInterface, e: FranjaEvento): Promis
   const { Box, Text, Button } = tabla
   // El campo de texto no está en todas las superficies; donde no está, «Solucionar» manda sin indicación.
   const Input = 'Input' in tabla ? tabla.Input : null
+  const t = tr()
   const pendientes = listas.filter(s => s.estado === 'lista')
   const marcadas = pendientes.filter(s => s.marcada)
   return (
@@ -87,22 +95,22 @@ export async function franjaSubidas($: EngineInterface, e: FranjaEvento): Promis
               <Button key={`marcar-${s.rama}`} label={s.marcada ? '[x]' : '[ ]'} plain onPress={() => marcar($, s.rama)} />
             ) : null}
             <Text bold color={colorSubida(s.estado)} wrap="truncate-end">
-              ⇡ {s.rama} ({s.commit.slice(0, 9)}) · {textoEstado(s)}
+              ⇡ {s.rama} ({s.commit.slice(0, 9)}) · {textoEstado(s, t)}
             </Text>
             {s.estado === 'lista' || s.estado === 'error' ? (
-              <Button key={`subir-${s.rama}`} label="Subir" variant="primary" onPress={() => subir($, [s.rama])} />
+              <Button key={`subir-${s.rama}`} label={t('franja.subir')} variant="primary" onPress={() => subir($, [s.rama])} />
             ) : null}
             {puedeSolucionar(s) ? (
               <Button
                 key={`solucionar-${s.rama}`}
-                label="Solucionar"
+                label={t('franja.solucionar')}
                 onPress={() => (Input ? poner($, s.rama, { estado: 'nota', previo: s.estado }) : mandarSolucion($, s.rama, ''))}
               />
             ) : null}
             {s.estado === 'nota' ? (
-              <Button key={`cancelar-${s.rama}`} label="Cancelar" onPress={() => poner($, s.rama, { estado: s.previo || 'lista' })} />
+              <Button key={`cancelar-${s.rama}`} label={t('franja.cancelar')} onPress={() => poner($, s.rama, { estado: s.previo || 'lista' })} />
             ) : null}
-            {borrable(s.estado) ? <Button key={`borrar-${s.rama}`} label="Borrar" onPress={() => borrar($, s.rama)} /> : null}
+            {borrable(s.estado) ? <Button key={`borrar-${s.rama}`} label={t('franja.borrar')} onPress={() => borrar($, s.rama)} /> : null}
           </Box>
           {s.resumen ? (
             <Text dimColor wrap="truncate-end">
@@ -113,7 +121,8 @@ export async function franjaSubidas($: EngineInterface, e: FranjaEvento): Promis
           {s.estado === 'lista'
             ? (s.choques ?? []).map((c, i) => (
                 <Text key={`choque-${s.rama}-${i}`} color="error" wrap="truncate-end">
-                  {'  ⚠ '}chocaría con {c.con.map(corto).join(', ')}: {c.archivos.join(', ')}
+                  {'  ⚠ '}
+                  {t('franja.chocaria', { con: c.con.map(corto).join(', '), archivos: c.archivos.join(', ') })}
                 </Text>
               ))
             : null}
@@ -126,9 +135,9 @@ export async function franjaSubidas($: EngineInterface, e: FranjaEvento): Promis
           {s.estado === 'nota' && Input ? (
             <Input
               key={`nota-${s.rama}`}
-              label="  Indicación para el agente (opcional):"
-              placeholder="Enter manda lo de «Por revisar» tal cual"
-              submitLabel="mandar"
+              label={t('franja.notaEtiqueta')}
+              placeholder={t('franja.notaAyuda')}
+              submitLabel={t('franja.notaMandar')}
               autoFocus
               onSubmit={(valor: string) => void mandarSolucion($, s.rama, valor)}
             />
@@ -140,13 +149,13 @@ export async function franjaSubidas($: EngineInterface, e: FranjaEvento): Promis
           {marcadas.length > 0 ? (
             <Button
               key="subir-marcadas"
-              label={`Subir marcadas (${marcadas.length})`}
+              label={t('franja.subirMarcadas', { n: marcadas.length })}
               variant="primary"
               onPress={() => subir($, marcadas.map(s => s.rama))}
             />
           ) : null}
           {pendientes.length > 1 ? (
-            <Button key="subir-todas" label={`Subir todas (${pendientes.length})`} onPress={() => subir($, pendientes.map(s => s.rama))} />
+            <Button key="subir-todas" label={t('franja.subirTodas', { n: pendientes.length })} onPress={() => subir($, pendientes.map(s => s.rama))} />
           ) : null}
         </Box>
       ) : null}

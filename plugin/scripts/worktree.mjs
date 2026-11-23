@@ -23,6 +23,7 @@ import * as conGit from './gestores/git.mjs'
 import * as conOrca from './gestores/orca.mjs'
 import { enPath } from './lanzadores.mjs'
 import * as reservas from './reservas.mjs'
+import { textos } from '../textos/indice.mjs'
 
 export const ENCARGO = '.claude/equipo-encargo.md'
 
@@ -35,23 +36,16 @@ export function gestorDe(a, { hayOrca = () => enPath('orca') } = {}) {
 }
 
 /** La frase que recibe el agente. Sin comillas, `;`, `$` ni acentos graves: pasa por terminales y por AppleScript. */
-export function promptDeEncargo(copia, idioma = 'es') {
-  const ruta = copia.replace(/\\/g, '/')
-  return idioma === 'es'
-    ? `Lee el archivo ${ENCARGO} de esta carpeta y haz el encargo que describe. Si no está, es el mismo que ${ruta}`
-    : `Read the file ${ENCARGO} in this folder and do the task it describes. If it is missing, it is the same as ${ruta}`
+export function promptDeEncargo(copia, a = { idioma: 'es', textos: {} }) {
+  return textos(a.idioma, a.textos)('encargo.prompt', { archivo: ENCARGO, copia: copia.replace(/\\/g, '/') })
 }
 
 /** Lo que se añade al final de todo encargo: el bloque reservado y cómo se entrega. */
 export function pieDeEncargo(a, reservado) {
-  const es = a.idioma === 'es'
+  const t = textos(a.idioma, a.textos)
   const lineas = []
-  if (reservado) lineas.push(es ? `Tu bloque de decisiones reservado es ${reservado}.` : `Your reserved block of decision numbers is ${reservado}.`)
-  lineas.push(
-    es
-      ? `Al acabar, sigue la skill equipo:lista-para-subir. No fusiones tú en ${a.ramaPrincipal}.`
-      : `When you finish, follow the skill equipo:lista-para-subir. Do not merge into ${a.ramaPrincipal} yourself.`,
-  )
+  if (reservado) lineas.push(t('encargo.pieBloque', { bloque: reservado }))
+  lineas.push(t('encargo.pieEntrega', { principal: a.ramaPrincipal }))
   return `\n\n---\n${lineas.join('\n')}\n`
 }
 
@@ -85,7 +79,7 @@ export function crear(corto, archivoEncargo, { repo = '.', gestor = null, entorn
   writeFileSync(copia, encargo)
   ignorar(comun, ENCARGO)
 
-  const prompt = promptDeEncargo(copia, a.idioma)
+  const prompt = promptDeEncargo(copia, a)
   const { ruta, rama } = g.crear({ principal, corto, base: a.ramaPrincipal, a, prompt })
   if (reservado) {
     reservas.guardar(principal, rama, [reservado.inicio, reservado.fin])

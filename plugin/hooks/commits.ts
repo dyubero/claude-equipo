@@ -4,6 +4,8 @@
 // - En cualquier copia: los archivos o carpetas de «prohibidos» (.claude/equipo.json) no entran.
 
 import type { Copia } from './copia'
+import type { T } from './idioma'
+import { ES } from './idioma'
 import { dentroDe, normalizar } from './rutas'
 import type { Git } from './shell'
 
@@ -17,6 +19,7 @@ export function copiaDe(carpeta: string | null, c: Copia): string | null {
 
 export type Juicio =
   | { tipo: 'pasa' }
+  /** `motivo` es el texto entero que se le da a Claude. */
   | { tipo: 'niega'; motivo: string }
   /** Hay que mirar `git status` de los prohibidos: si alguno tiene cambios que entrarían, se niega. */
   | { tipo: 'mirar'; copia: string; modo: Modo }
@@ -48,7 +51,7 @@ function prohibidoDe(abs: string, copiaGit: string, prohibidos: readonly string[
  * Lo que dice la guarda de un `git add`, `git rm` o `git commit`. Con `barridos` en falso (guardas.barridos de los
  * ajustes) no niega los `git add -A` y `git commit -a` de la copia principal; los prohibidos se miran siempre.
  */
-export function juzgar(git: Git, c: Copia, prohibidos: readonly string[], barridos = true): Juicio {
+export function juzgar(git: Git, c: Copia, prohibidos: readonly string[], barridos = true, t: T = ES): Juicio {
   const copiaGit = copiaDe(git.carpeta, c)
   const enPrincipal = copiaGit !== null && copiaGit === c.principal
   const hayProhibidos = normalizarProhibidos(prohibidos).length > 0
@@ -59,18 +62,13 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[], barrid
       (git.orden !== 'rm' && opciones.some(o => BARRIDOS_ADD.has(o) || (/^-[a-zA-Z]+$/.test(o) && /[Au]/.test(o)))) ||
       rutas.some(r => r === '.' || r === ':/' || r === ':' || r === '*')
     if (enPrincipal && barrido && barridos) {
-      return {
-        tipo: 'niega',
-        motivo:
-          `En la copia principal no se hace git ${git.orden} de todo (-A, ., -u): se añaden los archivos uno a uno. ` +
-          'Allí solo entran las fusiones y lo que se añade a mano.',
-      }
+      return { tipo: 'niega', motivo: t('guarda.barridoAdd', { orden: git.orden }) }
     }
     if (copiaGit === null || !hayProhibidos) return { tipo: 'pasa' }
     for (const ruta of rutas) {
       const abs = normalizar(ruta, git.carpeta, c.home, c.plegar)
       const prohibido = abs === null ? null : prohibidoDe(abs, copiaGit, prohibidos, c.plegar)
-      if (prohibido) return { tipo: 'niega', motivo: motivoProhibido(prohibido) }
+      if (prohibido) return { tipo: 'niega', motivo: motivoProhibido(prohibido, t) }
     }
     const cubre = barrido || rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c, prohibidos))
     return cubre ? { tipo: 'mirar', copia: copiaGit, modo: git.orden === 'rm' ? 'seguidos' : 'todo' } : { tipo: 'pasa' }
@@ -83,13 +81,13 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[], barrid
       rutas.some(r => r === '.' || r === ':/' || r === '*') ||
       (copiaGit !== null && rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c, prohibidos)))
     if (enPrincipal && todo && barridos) {
-      return { tipo: 'niega', motivo: 'En la copia principal no se hace git commit -a / --all ni git commit .: allí solo entran las fusiones y lo que se añade a mano.' }
+      return { tipo: 'niega', motivo: t('guarda.barridoCommit') }
     }
     if (copiaGit === null || !hayProhibidos) return { tipo: 'pasa' }
     for (const ruta of rutas) {
       const abs = normalizar(ruta, git.carpeta, c.home, c.plegar)
       const prohibido = abs === null ? null : prohibidoDe(abs, copiaGit, prohibidos, c.plegar)
-      if (prohibido) return { tipo: 'niega', motivo: motivoProhibido(prohibido) }
+      if (prohibido) return { tipo: 'niega', motivo: motivoProhibido(prohibido, t) }
     }
     // Siempre se mira el índice: un archivo prohibido ya añadido entraría con este commit.
     return { tipo: 'mirar', copia: copiaGit, modo: todo ? 'seguidos' : 'indice' }
@@ -106,8 +104,8 @@ function cubreProhibidos(ruta: string, carpeta: string | null, copiaGit: string,
   return abs !== null && normales.some(p => dentroDe(`${copiaGit}/${p}`, abs) || dentroDe(abs, `${copiaGit}/${p}`))
 }
 
-export function motivoProhibido(ruta: string): string {
-  return `${ruta} no entra en los commits (está en «prohibidos» de .claude/equipo.json). Añade tus archivos uno a uno.`
+export function motivoProhibido(ruta: string, t: T = ES): string {
+  return t('guarda.prohibido', { ruta })
 }
 
 /** De la salida de `git status --porcelain -- <prohibidos>`, los archivos que entrarían según el modo. */

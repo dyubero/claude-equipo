@@ -3,6 +3,7 @@
 
 import type { EngineInterface } from 'claude-code'
 
+import { textos } from '../textos/indice.mjs'
 import { leerAjustes } from './base'
 import type { Modo } from './commits'
 import { juzgar, motivoProhibido, prohibidosConCambios } from './commits'
@@ -23,21 +24,23 @@ export async function guardar($: EngineInterface, orden: string, activas: Activa
   if (activas.fusiones) {
     const fusion = fusionEnPrincipal(orden, carpeta, c)
     if (fusion) {
-      const { ramaPrincipal } = await leerAjustes($, c.raizOriginal)
-      return negativa(fusion, ramaPrincipal)
+      const a = await leerAjustes($, c.raizOriginal)
+      return negativa(fusion, a.ramaPrincipal, textos(a.idioma, a.textos))
     }
   }
 
   if (activas.commits) {
-    const { prohibidos, guardas } = await leerAjustes($, c.raizOriginal)
+    const a = await leerAjustes($, c.raizOriginal)
+    const { prohibidos, guardas } = a
+    const t = textos(a.idioma, a.textos)
     for (const git of llamadasGit(orden, carpeta, c.home, c.plegar)) {
-      const juicio = juzgar(git, c, prohibidos, guardas.barridos)
-      if (juicio.tipo === 'niega') return `equipo: ${juicio.motivo}`
+      const juicio = juzgar(git, c, prohibidos, guardas.barridos, t)
+      if (juicio.tipo === 'niega') return juicio.motivo
       if (juicio.tipo === 'mirar') {
         // Las rutas normalizadas pueden ir en minúsculas: git, con la ruta tal como es.
         const carpetaGit = juicio.copia === c.raiz ? c.raizOriginal : juicio.copia === c.principal ? c.principalOriginal : juicio.copia
         const entran = await prohibidosQueEntran($, carpetaGit, juicio.modo, prohibidos)
-        if (entran.length > 0) return `equipo: ${motivoProhibido(entran.join(', '))}`
+        if (entran.length > 0) return motivoProhibido(entran.join(', '), t)
       }
     }
   }

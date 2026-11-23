@@ -13,7 +13,7 @@ test('git -C <principal> merge se niega y explica cómo avisar a la principal', 
   preparar(on)
   const r = await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge --no-ff ana/carrito -m "Fusión de ana/carrito en main"` })
   expect(negado(r)).toMatch(/desde un worktree no se fusiona en la copia principal/)
-  expect(negado(r)).toMatch(/La rama ana\/carrito está lista para subir \(<commit>\)/)
+  expect(negado(r)).toMatch(/con la primera línea «equipo:lista ana\/carrito <commit>»/)
   expect(negado(r)).toMatch(/equipo:lista-para-subir/)
 })
 
@@ -151,6 +151,19 @@ test('los ajustes del usuario (~/.claude/equipo.json) valen en todos sus reposit
   preparar(on, { ajustesUsuario: JSON.stringify({ prohibidos: ['secretos.txt'], ramaPrincipal: 'trunk' }), ajustes: '{ "ramaPrincipal": "develop" }' })
   expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add secretos.txt' }))).toMatch(/secretos\.txt no entra/)
   expect(negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))).toMatch(/git merge develop/)
+})
+
+test('con idioma «en», las negativas salen en inglés', async ($, on) => {
+  preparar(on, { ajustes: JSON.stringify({ idioma: 'en', prohibidos: ['.env.local'] }) })
+  const fusion = negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))
+  expect(fusion).toMatch(/a worktree does not merge into the main copy/)
+  expect(fusion).toMatch(/"equipo:lista ana\/carrito <commit>"/)
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add .env.local' }))).toMatch(/\.env\.local never goes into a commit/)
+})
+
+test('un texto cambiado en los ajustes sustituye al del plugin', async ($, on) => {
+  preparar(on, { ajustes: JSON.stringify({ prohibidos: ['.env.local'], textos: { 'guarda.prohibido': 'NO: {ruta}' } }) })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add .env.local' }))).toBe('NO: .env.local')
 })
 
 test('un mensaje en heredoc no confunde a la guarda', async ($, on) => {

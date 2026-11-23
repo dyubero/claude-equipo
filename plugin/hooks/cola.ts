@@ -7,6 +7,7 @@ import type { EngineInterface } from 'claude-code'
 import type { Subida } from '../types'
 import type { Ajustes } from './ajustes'
 import { ajustesDe, avisar, script, scripts, SUBIDAS_INICIAL } from './base'
+import { tr } from './idioma'
 import type { Salida } from './base'
 import { montarRamas } from './ramas'
 import { revisar } from './revision'
@@ -45,7 +46,8 @@ export async function recibirSubida($: EngineInterface, aviso: AvisoSubida, text
     if (antes && (enCurso || antes.estado === 'fusionando')) return lista
     return [...lista.filter(s => s.rama !== aviso.rama), nueva]
   })
-  $.ui.toast(`${aviso.rama} lista para subir${aviso.porRevisar.length > 0 ? ` · ${aviso.porRevisar.length} por revisar` : ''}`)
+  const t = tr()
+  $.ui.toast(aviso.porRevisar.length > 0 ? t('subida.recibidaPorRevisar', { rama: aviso.rama, n: aviso.porRevisar.length }) : t('subida.recibida', { rama: aviso.rama }))
   if (!procesando) await ensayarListas($)
 }
 
@@ -77,8 +79,9 @@ export async function mandarSolucion($: EngineInterface, rama: string, nota: str
   if (!subida) return
   const a = await ajustesDe($)
   const motivo = subida.previo === 'conflicto' || subida.previo === 'falla' || subida.previo === 'error' || subida.previo === 'apartada' ? subida.detalle : ''
-  const enviado = await avisar($, subida.sesion, textoSolucionar(rama, subida.porRevisar, nota.trim(), motivo, a.ramaPrincipal))
-  await poner($, rama, enviado ? { estado: 'solucion-pedida' } : { estado: 'error', detalle: 'no he podido mandar el mensaje al agente' })
+  const t = tr()
+  const enviado = await avisar($, subida.sesion, textoSolucionar(rama, subida.porRevisar, nota.trim(), motivo, a.ramaPrincipal, t))
+  await poner($, rama, enviado ? { estado: 'solucion-pedida' } : { estado: 'error', detalle: t('subida.sinMensaje') })
 }
 
 // ---------------------------------------------------------------- el ensayo
@@ -112,8 +115,9 @@ export async function ensayarListas($: EngineInterface): Promise<void> {
 /** Aparta una rama del lote y se lo dice a su agente con las ramas o la principal con las que choca. */
 export async function apartar($: EngineInterface, p: Apartada, a: Ajustes): Promise<Apartada> {
   const subida = (await read($, subidas)).find(s => s.rama === p.rama)
-  const enviado = subida ? await avisar($, subida.sesion, textoApartada(p.rama, p.con, p.archivos, a.ramaPrincipal)) : false
-  const detalle = `choca con ${p.con.map(corto).join(', ')} en ${p.archivos.join(', ')}${enviado ? '' : ' · no he podido avisar al agente'}`
+  const t = tr()
+  const enviado = subida ? await avisar($, subida.sesion, textoApartada(p.rama, p.con, p.archivos, a.ramaPrincipal, t)) : false
+  const detalle = t('subida.choca', { con: p.con.map(corto).join(', '), archivos: p.archivos.join(', ') }) + (enviado ? '' : t('subida.sinAvisar'))
   await poner($, p.rama, { estado: 'apartada', detalle })
   return p
 }
@@ -125,6 +129,7 @@ export async function procesar($: EngineInterface): Promise<void> {
   if (procesando) return
   procesando = true
   const a = await ajustesDe($)
+  const t = tr()
   const lote: Fusionada[] = []
   const fallidas: string[] = []
   const apartadas: Apartada[] = []
@@ -147,7 +152,7 @@ export async function procesar($: EngineInterface): Promise<void> {
           if (p.con.includes(a.ramaPrincipal)) apartadas.push(await apartar($, p, a))
           else {
             tarde.push(p)
-            await poner($, p.rama, { estado: 'apartada', detalle: `chocaría con ${p.con.map(corto).join(', ')}: se avisa cuando entren` })
+            await poner($, p.rama, { estado: 'apartada', detalle: t('subida.chocariaLuego', { con: p.con.map(corto).join(', ') }) })
           }
         }
       }
@@ -171,9 +176,9 @@ export async function procesar($: EngineInterface): Promise<void> {
     procesando = false
   }
   if (lote.length > 0) {
-    await $.prompt.submit({ text: peticionLote(lote, fallidas, apartadas, generados, { ajustes: a, scripts: scripts($), herramienta: HERRAMIENTA_COMPLETA }) })
+    await $.prompt.submit({ text: peticionLote(lote, fallidas, apartadas, generados, { ajustes: a, scripts: scripts($), herramienta: HERRAMIENTA_COMPLETA, t }) })
   } else if (fallidas.length + apartadas.length > 0) {
-    $.ui.toast(`No ha entrado ninguna rama: ${[...fallidas, ...apartadas.map(p => p.rama)].join(', ')}`)
+    $.ui.toast(t('subida.ninguna', { ramas: [...fallidas, ...apartadas.map(p => p.rama)].join(', ') }))
   }
   await ensayarListas($)
 }
@@ -184,23 +189,24 @@ export async function fusionar($: EngineInterface, rama: string, a: Ajustes): Pr
   const raiz = await $.session.root()
   const git = (args: string[], timeoutMs = 30000): Promise<Salida> =>
     $.process.run(['git', ...args], { cwd: raiz, timeoutMs }).catch((error: unknown) => ({ exitCode: 1, stdout: '', stderr: String(error) }))
+  const t = tr()
   const fallo = async (detalle: string) => {
     await poner($, rama, { estado: 'error', detalle })
     return null
   }
 
   await poner($, rama, { estado: 'fusionando' })
-  if ((await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0) return fallo(`hay una fusión a medias en ${a.ramaPrincipal}`)
+  if ((await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0) return fallo(t('subida.mediaFusion', { principal: a.ramaPrincipal }))
   const actual = (await git(['symbolic-ref', '--short', 'HEAD'])).stdout.trim()
-  if (actual !== '' && actual !== a.ramaPrincipal) return fallo(`la copia principal está en ${actual}, no en ${a.ramaPrincipal}`)
+  if (actual !== '' && actual !== a.ramaPrincipal) return fallo(t('subida.otraRama', { actual, principal: a.ramaPrincipal }))
   const punta = await git(['rev-parse', '--verify', `refs/heads/${rama}`])
-  if (punta.exitCode !== 0) return fallo(`la rama ${rama} no existe en esta copia`)
+  if (punta.exitCode !== 0) return fallo(t('subida.noExiste', { rama }))
   const distinta = !punta.stdout.trim().startsWith(subida.commit)
   const squash = a.fusion.estrategia === 'squash'
-  const mensaje = mensajeFusion(rama, subida.resumen, a.ramaPrincipal)
+  const mensaje = mensajeFusion(rama, subida.resumen, a.ramaPrincipal, t)
   // Con squash, el commit se lleva todo el índice: no puede haber nada añadido de antes.
   if (squash && (await git(['diff', '--cached', '--quiet'])).exitCode !== 0) {
-    return fallo(`la copia principal tiene cambios añadidos sin confirmar (git add): confírmalos o quítalos antes de subir con squash`)
+    return fallo(t('subida.indiceSucio'))
   }
 
   const hecho = squash ? await git(['merge', '--squash', rama], 120000) : await git(['merge', '--no-ff', rama, '-m', mensaje], 120000)
@@ -209,17 +215,17 @@ export async function fusionar($: EngineInterface, rama: string, a: Ajustes): Pr
     if (squash) await git(['reset', '--merge'])
     else if ((await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0) await git(['merge', '--abort'])
     if (archivos.length > 0 || /CONFLICT/.test(hecho.stdout)) {
-      const enviado = await avisar($, subida.sesion, textoConflicto(rama, archivos, a.ramaPrincipal))
-      await poner($, rama, { estado: 'conflicto', detalle: `${archivos.join(', ')}${enviado ? '' : ' · no he podido avisar al agente'}` })
+      const enviado = await avisar($, subida.sesion, textoConflicto(rama, archivos, a.ramaPrincipal, t))
+      await poner($, rama, { estado: 'conflicto', detalle: `${archivos.join(', ')}${enviado ? '' : t('subida.sinAvisar')}` })
       return null
     }
-    return fallo((hecho.stderr || hecho.stdout).trim().slice(0, 300) || 'git merge ha fallado')
+    return fallo((hecho.stderr || hecho.stdout).trim().slice(0, 300) || t('subida.mergeFallo'))
   }
   if (squash) {
     const confirmado = await git(['commit', '-m', mensaje], 60000)
     if (confirmado.exitCode !== 0) {
       await git(['reset', '--merge'])
-      return fallo((confirmado.stderr || confirmado.stdout).trim().slice(0, 300) || 'git commit ha fallado (¿la rama no traía cambios?)')
+      return fallo((confirmado.stderr || confirmado.stdout).trim().slice(0, 300) || t('subida.commitFallo'))
     }
   }
 
@@ -232,7 +238,7 @@ export async function fusionar($: EngineInterface, rama: string, a: Ajustes): Pr
     if (codigos.length > 0) {
       // Los códigos con prefijo son lo esperado ahora: se renumeran todos juntos tras el lote.
       revision.lineas = revision.lineas.map(l =>
-        l.startsWith(`✖ ${a.backlog.documento}`) ? `• ${codigos.length} códigos de ${a.backlog.documento} con prefijo: se renumeran tras el lote` : l,
+        l.startsWith(`✖ ${a.backlog.documento}`) ? t('subida.codigosLuego', { n: codigos.length, documento: a.backlog.documento }) : l,
       )
       revision.problemas = revision.lineas.filter(l => l.startsWith('✖')).length
     }
@@ -264,5 +270,6 @@ export async function revisarFusion($: EngineInterface, rama: string, commit: st
       backlog: a.backlog.activo ? await git('show', `${commit}:${a.backlog.documento}`) : undefined,
     },
     a,
+    tr(),
   )
 }

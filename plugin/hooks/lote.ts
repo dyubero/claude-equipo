@@ -6,6 +6,7 @@ import type { EngineInterface } from 'claude-code'
 
 import { ajustesDe, avisar, script, scripts, SUBIDAS_INICIAL } from './base'
 import { borrar, poner } from './cola'
+import { tr } from './idioma'
 import { misma, rutasDeGit } from './ramas'
 import { codigosSinRenumerar, corto, textoFalla, textoSubida } from './subidas'
 
@@ -18,6 +19,7 @@ const subidas = atom({ plugin: 'equipo', key: 'subidas' } as const, SUBIDAS_INIC
  */
 export async function resultado($: EngineInterface, nombre: string, ok: boolean, motivo: string, sesionDada: string): Promise<string> {
   const a = await ajustesDe($)
+  const t = tr()
   const principal = a.ramaPrincipal
   const lista = await read($, subidas)
   const subida = lista.find(s => s.rama === nombre) ?? lista.find(s => corto(s.rama) === nombre)
@@ -30,34 +32,34 @@ export async function resultado($: EngineInterface, nombre: string, ok: boolean,
     const copia = copias.find(w => w.rama !== '' && (w.rama === nombre || corto(w.rama) === nombre || corto(w.ruta.replace(/\\/g, '/')) === nombre))
     rama = copia?.rama ?? ((await git('rev-parse', '-q', '--verify', `refs/heads/${nombre}`)).exitCode === 0 ? nombre : '')
   }
-  if (!rama) return `${nombre}: no está en la franja ni hay una rama o un worktree con ese nombre.`
+  if (!rama) return t('resultado.noEsta', { rama: nombre })
   const sesion = sesionDada || subida?.sesion || ''
   const fusion = (subida?.fusion || subida?.commit || (await git('rev-parse', '--short', 'HEAD')).stdout.trim()).slice(0, 9)
-  const sinSesion = sesion ? '' : ' (no sé la sesión de su agente: avísale tú con SendMessage o pásala en sesion)'
+  const sinSesion = sesion ? '' : t('resultado.sinSesion')
   if (!ok) {
-    const enviado = await avisar($, sesion, textoFalla(rama, fusion, motivo || 'sin motivo', principal))
+    const enviado = await avisar($, sesion, textoFalla(rama, fusion, motivo || t('agente.sinMotivo'), principal, t))
     if (subida) await poner($, rama, { estado: 'falla', detalle: motivo })
-    return `${rama}: marcada como fallida${enviado ? '; agente avisado' : `; no he podido avisar al agente${sinSesion}`}.`
+    return enviado ? t('resultado.fallida', { rama }) : t('resultado.fallidaSinAvisar', { rama, sinSesion })
   }
   // Solo se cierra lo que ya está entero en la principal. Con squash los commits de la rama no están en la principal:
   // vale si la rama no se ha movido desde que se subió.
   const entera = (await git('merge-base', '--is-ancestor', `refs/heads/${rama}`, 'HEAD')).exitCode === 0
   if (!entera) {
     const quieta = a.fusion.estrategia === 'squash' && Boolean(subida?.punta) && (await git('rev-parse', '--verify', `refs/heads/${rama}`)).stdout.trim() === subida?.punta
-    if (!quieta) return `${rama}: no está entera en ${principal} (tiene commits que ${principal} no tiene); no cierro su worktree.`
+    if (!quieta) return t('resultado.noEntera', { rama, principal })
   }
   let aviso = ''
   if (a.backlog.activo) {
     const quedan = codigosSinRenumerar(rama, (await git('show', `HEAD:${a.backlog.documento}`)).stdout)
     if (quedan.length > 0) {
-      aviso = ` ⚠ Quedan en ${a.backlog.documento} sin renumerar: ${quedan.join(', ')} (node "${scripts($)}/renumerar.mjs" --aplicar ${corto(rama)}).`
+      aviso = t('resultado.sinRenumerar', { documento: a.backlog.documento, codigos: quedan.join(', '), orden: `node "${scripts($)}/renumerar.mjs" --aplicar ${corto(rama)}` })
     }
   }
-  const enviado = await avisar($, sesion, textoSubida(rama, fusion, principal, a.worktrees.cerrarAlSubir))
-  const avisado = enviado ? ', agente avisado' : `, sin avisar al agente${sinSesion}`
+  const enviado = await avisar($, sesion, textoSubida(rama, fusion, principal, a.worktrees.cerrarAlSubir, t))
+  const avisado = enviado ? t('resultado.avisado') : t('resultado.sinAvisar', { sinSesion })
   if (!a.worktrees.cerrarAlSubir) {
     if (subida) await borrar($, rama)
-    return `${rama}: comprobada${avisado}; su worktree sigue abierto (worktrees.cerrarAlSubir está apagado).${aviso}`
+    return t('resultado.abierto', { rama, avisado, aviso })
   }
   const ruta = copias.find(w => w.rama === rama)?.ruta ?? ''
   const abierto = ruta !== '' && !misma(ruta, raiz)
@@ -65,10 +67,10 @@ export async function resultado($: EngineInterface, nombre: string, ok: boolean,
   // entera en la principal), el registro que pueda quedar en git, la rama y su reserva de bloque.
   const cierre = (await script($, 'worktree.mjs', ['cerrar', rama, ...(entera ? [] : ['--forzar'])], 180000)) as { cerrado?: boolean; motivo?: string } | null
   if (!cierre?.cerrado) {
-    const porque = (cierre?.motivo ?? 'worktree.mjs no ha contestado').slice(0, 200)
-    if (subida) await poner($, rama, { estado: 'fusionada', detalle: `comprobada; no he podido cerrar el worktree: ${porque}` })
-    return `${rama}: comprobada${avisado}; el worktree no se ha podido cerrar (${porque}).${aviso}`
+    const porque = (cierre?.motivo ?? t('resultado.sinRespuesta')).slice(0, 200)
+    if (subida) await poner($, rama, { estado: 'fusionada', detalle: t('subida.comprobadaSinCerrar', { motivo: porque }) })
+    return t('resultado.noCerrado', { rama, avisado, motivo: porque, aviso })
   }
   if (subida) await borrar($, rama)
-  return abierto ? `${rama}: comprobada${avisado} y worktree cerrado.${aviso}` : `${rama}: comprobada${avisado}; no tenía worktree abierto.${aviso}`
+  return t(abierto ? 'resultado.cerrado' : 'resultado.sinWorktree', { rama, avisado, aviso })
 }

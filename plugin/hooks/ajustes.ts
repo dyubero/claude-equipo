@@ -4,6 +4,7 @@
 
 import type { Ajustes } from '../scripts/por-defecto.mjs'
 import { comprobar, mezclar, POR_DEFECTO } from '../scripts/por-defecto.mjs'
+import { comprobarTextos } from '../textos/indice.mjs'
 
 export type { Ajustes }
 
@@ -27,7 +28,8 @@ export function ajustesDeTexto(proyecto: unknown, usuario: unknown = null): Ajus
 /** Lo que está mal en un archivo de ajustes: una línea por problema. */
 export function problemasDeTexto(texto: string): string[] {
   try {
-    return comprobar(JSON.parse(texto) as unknown)
+    const datos = JSON.parse(texto) as { textos?: unknown }
+    return [...comprobar(datos), ...comprobarTextos(datos?.textos)]
   } catch (error) {
     return [`no es JSON válido: ${String(error instanceof Error ? error.message : error).slice(0, 120)}`]
   }

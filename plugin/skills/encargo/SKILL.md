@@ -3,65 +3,69 @@ name: encargo
 description: Use when, in the main copy of a repository that works with the equipo plugin (the main branch checked out, .git is a folder), the user asks for new work that must go to its own worktree and agent, or types /encargo.
 ---
 
-# /encargo — lanzar un encargo en su worktree
+# /encargo — launch a task in its own worktree
 
-Desde la copia principal no se implementa: cada encargo va a un worktree nuevo con su propio agente, y el usuario
-habla después con ese agente. Esta skill lo lanza entero, sin olvidar nada. **Solo en la copia principal** (`.git` es
-una carpeta). En un worktree, no la uses.
+Nothing is implemented in the main copy: each task goes to a new worktree with its own agent, and the user then talks
+to that agent. This skill launches it whole, without forgetting anything. **Only in the main copy** (`.git` is a
+folder). In a worktree, do not use it.
 
-Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta skill (la «Base directory» que sale al
-cargarla). Abajo se escriben como `<scripts>`.
+Talk to the user in the language they write to you in. Write the commit and the pending-work document in the team's
+language: the `idioma` setting.
 
-Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:adapt-to-project`
-(estudia el proyecto y pregunta al usuario cómo compila, prueba y documenta).
+The plugin's scripts are in `../../scripts` relative to this skill's folder (the "Base directory" shown when the skill
+loads); below they are written `<scripts>`. They print Spanish or JSON: read their output, do not relay it verbatim.
 
-El worktree lo crea `worktree.mjs`, con Orca si está instalado y con `git worktree` si no. No llames tú a `orca` ni a
-`git worktree add`: el script además reserva el bloque de decisiones, deja el encargo donde el agente lo lee y abre su
-sesión.
+If the project has no `.claude/equipo.json`, it is not set up yet: follow the `equipo:adapt-to-project` skill first (it
+studies the project and asks the user how it builds, tests and documents things).
 
-## Pasos
+The worktree is created by `worktree.mjs`: with Orca when it is installed, with `git worktree` otherwise. Do not call
+`orca` or `git worktree add` yourself: the script also reserves the block of decision numbers, puts the task where the
+agent reads it, and opens the agent's session.
 
-1. **Ajustes:** `node <scripts>/ajustes.mjs`. De ahí salen la rama principal, si se usan decisiones numeradas
-   (`decisiones.activo`) y el documento de pendientes.
-2. **Decisiones de diseño abiertas.** Si el encargo deja cosas que decide el usuario, elige una de dos:
-   - el encargo es corto y las dudas son pocas: pregúntaselas antes, en un bloque con opciones y una recomendación;
-   - el encargo es grande o pide explorar primero: lánzalo y di en el encargo que el agente le presente esas preguntas
-     antes de implementar.
-3. **Nombre corto:** kebab-case, 1-3 palabras del encargo (`carrito-pago`, `login-magico`). Es el nombre de la carpeta
-   y el final de la rama (Orca le pone su prefijo, `usuario/<nombre>`; con git, el de `worktrees.prefijoRama`). Si ya
-   hay un worktree o una rama con ese nombre (`node <scripts>/worktree.mjs lista`), elige otro.
-4. **Texto del encargo**, en un archivo temporal (escríbelo con tu herramienta de archivos, no con la shell). Lleva:
-   - lo que pidió el usuario, **tal cual**, entre «»;
-   - lo que se haya decidido con él (opciones elegidas), o qué preguntas tiene que hacerle el agente.
+## Steps
 
-   No hace falta quitar comillas ni ningún otro carácter: el texto no pasa por la línea de órdenes. Tampoco hace falta
-   escribir el bloque de decisiones ni «al acabar, sigue lista-para-subir»: lo añade el script al final.
-5. **Crear:** `node <scripts>/worktree.mjs crear <nombre> --encargo <archivo>`. Contesta en JSON:
-   - `error`: no se ha creado. Cuéntaselo al usuario con el error; no lo reintentes con otro nombre por tu cuenta.
-   - `ruta`, `rama` y `bloque` (el bloque de decisiones reservado, si se usan).
-   - `lanzado: true`: la sesión del agente ya está abierta (en Orca, o en la pestaña o ventana que abre el lanzador).
-   - `lanzado: false`: no se ha podido abrir sola (`motivo` dice por qué; con el lanzador `manual` es lo normal). Dale al
-     usuario la orden de `orden` para que la pegue en una terminal nueva.
-6. **Documento de pendientes** (`pendientes` de los ajustes):
-   - una fila al final de la tabla de «## En marcha»: `| <nombre> | <resumen en una línea> | <bloque o —> |` (si la
-     sección no existe, créala con la cabecera `| Rama | Encargo | Decisiones |`);
-   - «Actualizado el <hoy>.» si el documento tiene esa línea.
+1. **Settings:** `node <scripts>/ajustes.mjs`. It gives the main branch, whether numbered decisions are used
+   (`decisiones.activo`) and the pending-work document (`pendientes`).
+2. **Open design decisions.** If the task leaves things for the user to decide, pick one of two:
+   - the task is short and the doubts are few: ask them first, in one block with options and a recommendation;
+   - the task is large or needs exploring first: launch it, and say in the task that the agent must put those questions
+     to the user before implementing.
+3. **Short name:** kebab-case, 1-3 words from the task (`cart-payment`, `magic-login`). It is the folder name and the
+   end of the branch name (Orca adds its own prefix, `user/<name>`; with git, the one in `worktrees.prefijoRama`). If a
+   worktree or branch by that name already exists (`node <scripts>/worktree.mjs lista`), pick another.
+4. **The task text**, in a temporary file (write it with your file tool, not through the shell). It carries:
+   - what the user asked for, **verbatim**, in quotation marks;
+   - what was decided with them (the options chosen), or which questions the agent must ask them.
 
-   Commit solo de ese archivo: `git add <documento>` y `git commit -m "Pendientes: <nombre> en marcha"` (en el idioma
-   de `idioma`).
-7. **Al usuario:** el nombre del worktree, el bloque si lo hay y que a partir de ahora habla con ese agente (o la orden
-   que tiene que pegar, si no se ha abierto solo).
+   No character needs escaping or removing: the text does not travel on a command line. Do not add the decision block
+   or "when you finish, follow lista-para-subir" either: the script appends both.
+5. **Create:** `node <scripts>/worktree.mjs crear <name> --encargo <file>`. It answers in JSON:
+   - `error`: nothing was created. Tell the user, with the error; do not retry under another name on your own.
+   - `ruta` (the folder), `rama` (the branch) and `bloque` (the reserved block of decision numbers, when used).
+   - `lanzado: true`: the agent's session is open (in Orca, or in the tab or window the launcher opens).
+   - `lanzado: false`: it could not be opened automatically (`motivo` says why; with the `manual` launcher this is the
+     normal case). Give the user the command in `orden` to paste into a new terminal.
+6. **The pending-work document** (`pendientes` in the settings):
+   - a row at the end of the table under the "in progress" section: `| <name> | <one-line summary> | <block or —> |`.
+     Use the section the document already has; if there is none, create `## En marcha` (Spanish), `## In progress`
+     (English) or the equivalent in the team's language, with the header row `| Branch | Task | Decisions |` in that
+     language;
+   - the "updated on" line, if the document has one.
 
-## Varios encargos a la vez
+   Commit only that file: `git add <document>` and `git commit -m "<Pending: <name> in progress, in the idioma language>"`.
+7. **Tell the user:** the worktree's name, the block if there is one, and that from now on they talk to that agent (or
+   the command they must paste, if the session did not open on its own).
 
-Un worktree por encargo, creados uno tras otro: cada `crear` reserva su bloque, así que el siguiente ya lo cuenta. Un
-solo commit del documento de pendientes con todas las filas.
+## Several tasks at once
 
-## Errores comunes
+One worktree per task, created one after another: each `crear` reserves its block, so the next one already counts it.
+One commit of the pending-work document with all the rows.
 
-| Error | Cómo se evita |
+## Common mistakes
+
+| Mistake | How to avoid it |
 |---|---|
-| El encargo pierde lo que dijo el usuario | Su texto va literal, entre «» |
-| Crear el worktree a mano (`orca worktree create`, `git worktree add`) | Sin bloque reservado ni archivo de encargo: siempre `worktree.mjs crear` |
-| Decir «ya habla con su agente» con `lanzado: false` | La sesión no está abierta: dale la orden de `orden` |
-| Se implementa en la copia principal | Nunca: desde la principal solo se crean worktrees y se suben ramas |
+| The task loses what the user said | Their text goes in verbatim, in quotation marks |
+| Creating the worktree by hand (`orca worktree create`, `git worktree add`) | No reserved block and no task file: always `worktree.mjs crear` |
+| Saying "you can talk to its agent now" with `lanzado: false` | The session is not open: give them the command in `orden` |
+| Implementing in the main copy | Never: from the main copy you only create worktrees and merge branches |

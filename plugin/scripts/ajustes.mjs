@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import { AJUSTES, ajustes, argumentos, capas, imprimir, POR_DEFECTO, raiz } from './comun.mjs'
 import { comprobar } from './por-defecto.mjs'
+import { comprobarTextos } from '../textos/indice.mjs'
 
 export const ESQUEMA = 'https://raw.githubusercontent.com/dyubero/claude-equipo/main/plugin/equipo.schema.json'
 
@@ -44,7 +45,7 @@ export function problemas(repo = '.') {
   } catch (error) {
     return [{ ruta: '', problemas: [error.message] }]
   }
-  for (const capa of [c.usuario, c.proyecto]) if (capa.datos !== null) salida.push({ ruta: capa.ruta, problemas: comprobar(capa.datos) })
+  for (const capa of [c.usuario, c.proyecto]) if (capa.datos !== null) salida.push({ ruta: capa.ruta, problemas: [...comprobar(capa.datos), ...comprobarTextos(capa.datos?.textos)] })
   return salida
 }
 

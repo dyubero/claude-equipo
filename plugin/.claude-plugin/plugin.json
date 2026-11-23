@@ -1,7 +1,7 @@
 {
   "name": "equipo",
-  "version": "0.3.0",
-  "description": "Trabajo en paralelo con agentes, cada uno en su worktree (con Orca o con git a secas): subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo",
+  "version": "0.4.0",
+  "description": "Parallel agents, each in its own worktree (with Orca or plain git): merges into the main branch with a dry run and a queue, a context bar, git guards and the skills of the workflow. In English and Spanish.",
   "author": {
     "name": "dyubero"
   },
@@ -10,33 +10,33 @@
     "worktrees",
     "orca",
     "git",
-    "subidas",
-    "agentes"
+    "merge",
+    "agents"
   ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "contexto": {
       "type": "boolean",
-      "title": "Franja del contexto",
-      "description": "Una línea sobre el prompt con el contexto usado y libre, y el botón Compactar.",
+      "title": "Context bar",
+      "description": "A line above the prompt with the context used and free, and a Compact button.",
       "default": true
     },
     "subidas": {
       "type": "boolean",
-      "title": "Subidas desde la copia principal",
-      "description": "Los avisos «lista para subir» salen en la franja con Subir, Solucionar y Borrar; ensayo, cola y resultado_lote.",
+      "title": "Merges from the main copy",
+      "description": "Branches their agents hand back show above the prompt with Merge, Fix and Dismiss; dry run, queue and the batch check.",
       "default": true
     },
     "fusiones": {
       "type": "boolean",
-      "title": "Freno a las fusiones en la principal",
-      "description": "Desde un worktree, niega fusionar en la copia principal: las ramas las sube el usuario desde allí.",
+      "title": "Merge guard",
+      "description": "From a worktree, refuses merging into the main copy: branches are merged by the user from there.",
       "default": true
     },
     "commits": {
       "type": "boolean",
-      "title": "Guarda de los commits",
-      "description": "En la principal niega git add -A / . / -u y git commit -a; en cualquier copia, los «prohibidos» de .claude/equipo.json.",
+      "title": "Commit guard",
+      "description": "In the main copy, refuses git add -A / . / -u and git commit -a; in any copy, the files listed in \"prohibidos\" in .claude/equipo.json.",
       "default": true
     }
   }

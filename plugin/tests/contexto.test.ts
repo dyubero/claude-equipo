@@ -76,6 +76,19 @@ test('los umbrales de aviso y peligro salen de los ajustes (contexto.aviso y con
   expect((linea?.props as { color?: string } | undefined)?.color).toBe('warning')
 })
 
+test('con idioma «en», la franja del contexto sale en inglés, con punto decimal', async ($, on) => {
+  preparar(on, 84_500)
+  on('session.root', () => ({ value: 'C:/x' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('x/.claude/equipo.json') ? { value: '{ "idioma": "en" }' } : { deny: 'no existe' }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  await arrancar($)
+  await $.session.measure({ context: { tokens: 1_500, window: 200_000, percent: 1 }, rateLimits: [], changed: ['context'] } as never)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '● Context: 1.5k of 200k used (1%) · 199k free' })).toBeDefined()
+  expect((await ui.find({ key: 'compactar' }))?.props).toMatchObject({ label: 'Compact' })
+})
+
 test('«Compactar» compacta y pone la cifra al día', async ($, on) => {
   const r = preparar(on, 120_000)
   await arrancar($)
