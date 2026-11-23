@@ -5,10 +5,20 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { ajustesDeTexto } from '../hooks/ajustes'
 import { revisar } from '../hooks/revision'
+import { textos } from '../textos/indice.mjs'
 import { avisoDeSubida, choquesDe, codigosConPrefijo, codigosSinRenumerar, leerPlan, mensajeFusion, peticionLote } from '../hooks/subidas'
 
 const PRINCIPAL = 'C:/Users/ana/proyectos/tienda'
 const CARRITO = 'C:/Users/ana/orca/workspaces/tienda/carrito'
+
+// En Linux y macOS una ruta «C:/…» no es absoluta, y Claude Code la resuelve contra la carpeta actual: aquí se le
+// quita lo que lleve delante, para que las rutas de mentira valgan igual en los tres sistemas.
+const limpia = (ruta: string) => {
+  const p = ruta.replace(/\\/g, '/')
+  const i = p.toLowerCase().indexOf('c:/users/ana')
+  return i > 0 ? p.slice(i) : p
+}
+
 
 const LISTA_CARRITO = [
   'La rama carrito está lista para subir (aaa1111)',
@@ -30,10 +40,25 @@ const LISTA_LOGIN = [
 ].join('\n')
 
 const PORCELANA = `worktree ${PRINCIPAL}\nHEAD 1\nbranch refs/heads/main\n\nworktree ${CARRITO}\nHEAD 2\nbranch refs/heads/carrito\n`
-const ORCA = JSON.stringify({ ok: true, result: { worktrees: [{ path: CARRITO, displayName: 'carrito', comment: 'D31-D40' }] } })
+// Lo que contesta `node scripts/worktree.mjs lista`.
+const LISTA = JSON.stringify([{ ruta: CARRITO, rama: 'carrito', principal: false, nombre: 'carrito', bloque: 'D31-D40', agente: '', actividad: 0 }])
 const CON_BACKLOG = JSON.stringify({ backlog: { activo: true }, decisiones: { activo: true }, comandos: { regenerar: 'npm install' } })
 
-type Escena = { enPrincipal?: boolean; chocan?: string[]; plan?: unknown; fusionadas?: string[]; ajustes?: string | null }
+type Escena = {
+  enPrincipal?: boolean
+  chocan?: string[]
+  plan?: unknown
+  fusionadas?: string[]
+  ajustes?: string | null
+  /** `node` no está en el PATH. */
+  sinNode?: boolean
+  /** Lo que contesta `git --version`. */
+  git?: string
+  /** La copia principal tiene cambios añadidos (git add) sin confirmar. */
+  indice?: boolean
+  /** La copia principal no está en ninguna rama. */
+  headSuelto?: boolean
+}
 type Enviado = { to: string; text: string }
 
 const BANDA = {
@@ -68,22 +93,27 @@ function preparar(on: On, escena: Escena = {}) {
     return { isDelivered: true }
   })
   on('session.receive', ($, e) => ({ text: e.text }))
-  on('fs.stat', ($, e) => ({ value: { kind: e.path.replace(/\\/g, '/').toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.stat', ($, e) => ({ value: { kind: limpia(e.path).toLowerCase().startsWith(PRINCIPAL.toLowerCase()) ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('.claude/equipo.json') && ajustes !== null ? { value: ajustes } : { deny: 'no existe' }))
   on('process.run', ($, e) => {
     const argv = [...e.argv]
     r.ordenes.push(argv)
     const sale = (exitCode: number, stdout = '', stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
+    if (argv[0] === 'node' && escena.sinNode) return { deny: 'spawn node ENOENT' }
+    if (argv[0] === 'git' && argv[1] === '--version') return sale(0, escena.git ?? 'git version 2.52.0\n')
     if (argv[0] === 'node' && (argv[1] ?? '').endsWith('/scripts/ensayo.mjs')) return escena.plan ? sale(0, JSON.stringify(escena.plan)) : sale(1, '', 'sin ensayo')
+    if (argv[0] === 'node' && (argv[1] ?? '').endsWith('/scripts/worktree.mjs')) {
+      return argv[2] === 'lista' ? sale(0, LISTA) : sale(0, JSON.stringify({ cerrado: true, rama: argv[3], ruta: CARRITO, motivo: '' }))
+    }
     if (argv[0] === 'node') return sale(0, 'drivers ya al día')
     if (argv[1] === 'merge-base' && argv[2] === '--is-ancestor') {
+      // Un commit suelto (el de la fusión) sigue en la principal; de las ramas, las que diga la escena.
+      if (!(argv[3] as string).startsWith('refs/heads/')) return sale(0)
       return sale(escena.fusionadas === undefined || escena.fusionadas.includes((argv[3] as string).replace('refs/heads/', '')) ? 0 : 1)
     }
     if (argv[1] === 'show' && argv[2] === 'HEAD:BACKLOG.md') return sale(0, '| T1 | a |\n| pagos-T2 | sin renumerar |\n')
-    if (argv[0] === 'orca' && argv[2] === 'ps') return sale(0, ORCA)
-    if (argv[0] === 'orca') return sale(0, '{"ok":true}')
     if (argv.includes('worktree')) return sale(0, PORCELANA)
-    if (argv[1] === 'symbolic-ref') return sale(0, 'main\n')
+    if (argv[1] === 'symbolic-ref') return escena.headSuelto ? sale(128, '', 'fatal: ref HEAD is not a symbolic ref') : sale(0, 'main\n')
     if (argv[1] === 'rev-parse' && argv.includes('MERGE_HEAD')) {
       const choco = r.ordenes.some(o => o[1] === 'merge' && o[2] === '--no-ff' && (escena.chocan ?? []).includes(o[3] as string))
       return sale(choco && !r.ordenes.some(o => o[2] === '--abort') ? 0 : 1)
@@ -94,8 +124,10 @@ function preparar(on: On, escena: Escena = {}) {
       return (escena.chocan ?? []).includes(argv[3] as string) ? sale(1, 'CONFLICT (content): Merge conflict in src/app.ts\n') : sale(0, 'Merge made\n')
     }
     if (argv[1] === 'merge' && argv[2] === '--abort') return sale(0)
+    if (argv[1] === 'merge' && argv[2] === '--squash') return sale(0, 'Squash commit -- not updating HEAD\n')
+    if (argv[1] === 'diff' && argv.includes('--cached')) return sale(escena.indice ? 1 : 0)
     if (argv.includes('--diff-filter=U')) return sale(0, (escena.chocan ?? []).length > 0 ? 'src/app.ts\n' : '')
-    if (argv.includes('--parents')) return sale(0, 'f1 p1 p2\n')
+    if (argv.includes('--parents')) return sale(0, r.ordenes.some(o => o[2] === '--squash') ? 'f1 p1\n' : 'f1 p1 p2\n')
     if (argv.includes('--name-status')) return sale(0, 'M\tBACKLOG.md\nM\tsrc/carrito.ts\nM\tpackage-lock.json\n')
     if (argv.includes('-U0')) return sale(0, '+++ b/BACKLOG.md\n+| carrito-1 | algo | x |\n+| carrito-2 | otra | x |\n+++ b/DESIGN.md\n+### D32. Descuentos\n')
     if (argv.includes('status')) return sale(0, '')
@@ -129,9 +161,27 @@ test('el aviso «lista para subir» da la rama, el commit, la sesión, el resume
   expect(avisoDeSubida('La rama x está fusionada en main (abc1234)')).toBeNull()
 })
 
+test('el aviso se reconoce por la línea «equipo:lista <rama> <commit>», con las etiquetas en inglés o en español', () => {
+  const aviso = ['equipo:lista ana/cart 3f2a9c1', 'Session: cart-4e', 'Summary: card payments in the cart', 'What changes: src/cart.ts', 'To review:', '- untested in Safari', '', 'Test: npm test'].join('\n')
+  expect(avisoDeSubida(aviso)).toEqual({ rama: 'ana/cart', commit: '3f2a9c1', sesion: 'cart-4e', resumen: 'card payments in the cart', porRevisar: ['untested in Safari'] })
+  expect(avisoDeSubida('equipo:lista `carrito` `aaa1111`\nSesión: carrito-e4\nResumen: descuentos\nPor revisar: nada')).toEqual({
+    rama: 'carrito',
+    commit: 'aaa1111',
+    sesion: 'carrito-e4',
+    resumen: 'descuentos',
+    porRevisar: [],
+  })
+  expect(avisoDeSubida('equipo:lista cart abc1234\nTo review: none')?.porRevisar).toEqual([])
+  // La línea tiene que ser la del aviso, no una cita de las instrucciones.
+  expect(avisoDeSubida('vuelve a avisar con la línea «equipo:lista carrito <commit>»')).toBeNull()
+  expect(avisoDeSubida('Avisa con equipo:lista cuando acabes')).toBeNull()
+})
+
 test('el mensaje de la fusión y los códigos con prefijo', () => {
   expect(mensajeFusion('carrito', 'descuentos.')).toBe('Fusión de carrito en main: descuentos')
   expect(mensajeFusion('carrito', '', 'develop')).toBe('Fusión de carrito en develop')
+  expect(mensajeFusion('cart', 'discounts.', 'main', textos('en'))).toBe('Merge cart into main: discounts')
+  expect(mensajeFusion('cart', 'discounts', 'main', textos('en', { 'fusion.mensaje': 'feat({rama}): {resumen}' }))).toBe('feat(cart): discounts')
   expect(codigosConPrefijo('carrito', '+++ b/BACKLOG.md\n+| carrito-1 | a |\n+ver carrito-T2\n+++ b/DESIGN.md\n+carrito-9\n')).toEqual(['carrito-1', 'carrito-T2'])
 })
 
@@ -195,6 +245,22 @@ test('con ajustes no lo recuerda', NO_CONTEXTO, async ($, on) => {
   expect(r.toasts).toEqual([])
 })
 
+test('sin node en el PATH lo dice al empezar, y la franja avisa de que no hay ensayo', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { sinNode: true })
+  await arrancar($)
+  expect(r.toasts.length).toBe(1)
+  expect(r.toasts[0]).toMatch(/no encuentro node en el PATH/)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /carrito \(aaa1111\) · lista para subir · sin ensayo/ })).toBeDefined()
+})
+
+test('con un git anterior a 2.38 dice que el ensayo no funciona', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { git: 'git version 2.30.1\n' })
+  await arrancar($)
+  expect(r.toasts).toEqual(['equipo: git 2.30 es anterior a 2.38: el ensayo de las subidas (git merge-tree) no funciona.'])
+})
+
 test('con las subidas apagadas, el aviso llega a Claude y no se instala nada', { options: { subidas: false, contexto: false } }, async ($, on) => {
   const r = preparar(on)
   await arrancar($)
@@ -253,8 +319,8 @@ test('una rama que choca se aborta, se avisa a su agente y el resto del lote sig
   expect(await ui.find({ type: 'Text', text: /carrito .* conflicto, agente avisado/ })).toBeDefined()
 })
 
-test('sin backlog ni decisiones (lo de por defecto), la petición solo pide compilar, probar y el resultado', NO_CONTEXTO, async ($, on) => {
-  const r = preparar(on, { ajustes: '{}' })
+test('sin backlog ni decisiones, la petición solo pide compilar, probar y el resultado', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "comandos": { "compilar": "npm run build", "probar": "npm test" } }' })
   await arrancar($)
   await recibir($, LISTA_CARRITO)
   const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
@@ -280,7 +346,7 @@ test('«Solucionar» pide una indicación y manda al agente lo de «Por revisar�
   expect(r.enviados[0]?.to).toBe('login-87')
   expect(r.enviados[0]?.text).toMatch(/- sin probar en Safari/)
   expect(r.enviados[0]?.text).toMatch(/Indicación del usuario: prueba también en Firefox/)
-  expect(r.enviados[0]?.text).toMatch(/está lista para subir \(<commit>\)/)
+  expect(r.enviados[0]?.text).toMatch(/vuelve a avisar con la línea «equipo:lista login <commit>»/)
   expect(await ui.find({ type: 'Text', text: /login .* arreglo pedido al agente/ })).toBeDefined()
 })
 
@@ -300,16 +366,105 @@ test('el resultado del lote cierra el worktree de las que están bien y avisa a 
   const texto = JSON.stringify(respuesta)
   expect(texto).toMatch(/carrito: comprobada, agente avisado y worktree cerrado/)
   expect(texto).toMatch(/login: marcada como fallida; agente avisado/)
-  expect(r.ordenes).toContainEqual(['orca', 'worktree', 'rm', '--worktree', 'branch:carrito', '--force', '--json'])
-  const despues = r.ordenes.slice(r.ordenes.findIndex(o => o[2] === 'rm'))
-  expect(despues).toContainEqual(['git', 'worktree', 'prune'])
-  expect(despues).toContainEqual(['git', 'branch', '-d', 'carrito'])
-  expect(r.ordenes.some(o => o[0] === 'orca' && o.includes('branch:login'))).toBe(false)
+  // El cierre (worktree, rama y reserva) lo hace worktree.mjs, con Orca o con git.
+  const cierres = r.ordenes.filter(o => o[0] === 'node' && o[2] === 'cerrar')
+  expect(cierres.map(o => o[3])).toEqual(['carrito'])
+  expect(cierres[0]?.[1]).toMatch(/\/scripts\/worktree\.mjs$/)
   expect(r.enviados.find(m => m.to === 'carrito-e4')?.text).toMatch(/está subida a main/)
   expect(r.enviados.find(m => m.to === 'login-87')?.text).toMatch(/enlace mágico falla/)
   expect(await ui.find({ key: 'subir-carrito' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /login .* dentro, pero falla/ })).toBeDefined()
   expect(await ui.find({ key: 'solucionar-login' })).toBeDefined()
+})
+
+test('sin comandos en los ajustes (lo de por defecto), la petición no inventa ninguno', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{}' })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.prompts[0]).toMatch(/1\. Pruebas del lote, una sola vez: las pruebas de lo que tocan/)
+  expect(r.prompts[0]).toMatch(/comandos\.probar no está puesto/)
+  expect(r.prompts[0]).not.toMatch(/npm/)
+})
+
+test('con fusion.estrategia «squash» entra un solo commit, y la rama se cierra si no se ha movido', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "fusion": { "estrategia": "squash" } }', fusionadas: [] })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.ordenes).toContainEqual(['git', 'merge', '--squash', 'carrito'])
+  expect(r.ordenes).toContainEqual(['git', 'commit', '-m', 'Fusión de carrito en main: carrito con descuentos por cantidad (D31-D33)'])
+  expect(r.ordenes.some(o => o[1] === 'merge' && o[2] === '--no-ff')).toBe(false)
+  expect(r.prompts[0]).toMatch(/es un solo commit con toda la rama \(squash\)/)
+  // Los commits de la rama no están en main: se cierra a la fuerza, porque su punta es la que se subió.
+  const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
+  expect(texto).toMatch(/carrito: comprobada, agente avisado y worktree cerrado/)
+  expect(r.ordenes.find(o => o[2] === 'cerrar')?.slice(2)).toEqual(['cerrar', 'carrito', '--forzar', '--punta', 'aaa1111ffff'])
+})
+
+test('si la copia principal no está en la rama principal (HEAD suelto), no se sube nada', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { headSuelto: true })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.ordenes.some(o => o[1] === 'merge')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /no ha entrado: la copia principal está en HEAD, no en main/ })).toBeDefined()
+})
+
+test('con squash, si hay algo añadido en la copia principal no se sube', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "fusion": { "estrategia": "squash" } }', indice: true })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.ordenes.some(o => o[1] === 'merge')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /no ha entrado: la copia principal tiene cambios añadidos sin confirmar/ })).toBeDefined()
+})
+
+test('con worktrees.cerrarAlSubir apagado, la rama comprobada conserva su worktree', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "worktrees": { "cerrarAlSubir": false } }' })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
+  expect(texto).toMatch(/carrito: comprobada, agente avisado; su worktree sigue abierto/)
+  expect(r.ordenes.some(o => o[2] === 'cerrar')).toBe(false)
+  expect(r.enviados.find(m => m.to === 'carrito-e4')?.text).toMatch(/Tu worktree sigue abierto/)
+})
+
+test('unos ajustes con una clave que no existe se avisan al empezar', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "comandos": { "compliar": "make" } }' })
+  await arrancar($)
+  expect(r.toasts.length).toBe(1)
+  expect(r.toasts[0]).toMatch(/\.claude\/equipo\.json tiene un problema: «comandos\.compliar» no es un ajuste/)
+  expect(r.toasts[0]).toMatch(/ajustes\.mjs" --comprobar/)
+})
+
+test('con idioma «en», la franja, los avisos a los agentes y la petición del lote salen en inglés', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "idioma": "en", "comandos": { "compilar": "npm run build", "probar": "npm test" } }', chocan: ['login'] })
+  await arrancar($)
+  await recibir($, 'equipo:lista carrito aaa1111\nSession: carrito-e4\nSummary: cart discounts\nTest: npx vitest run src/cart.test.ts')
+  await recibir($, 'equipo:lista login bbb2222\nSession: login-87\nSummary: magic link\nTo review:\n- untested in Safari')
+  expect(r.toasts).toContain('login ready to merge · 1 to review')
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /carrito \(aaa1111\) · ready to merge/ })).toBeDefined()
+  expect((await ui.find({ key: 'subir-carrito' }))?.props).toMatchObject({ label: 'Merge' })
+  expect((await ui.find({ key: 'subir-todas' }))?.props).toMatchObject({ label: 'Merge all (2)' })
+  await ui.press({ key: 'subir-todas' })
+  expect(r.ordenes).toContainEqual(['git', 'merge', '--no-ff', 'carrito', '-m', 'Merge carrito into main: cart discounts'])
+  expect(r.enviados.find(m => m.to === 'login-87')?.text).toMatch(/^Merging branch login into main conflicted with what was already in/)
+  expect(r.enviados.find(m => m.to === 'login-87')?.text).toMatch(/notify again with the line "equipo:lista login <commit>"/)
+  expect(r.prompts[0]).toMatch(/^Check together in main the branches the equipo plugin has just merged: carrito\. Follow the skill equipo:comprobar-lote\./)
+  expect(r.prompts[0]).toMatch(/✔ it is a merge/)
+  expect(r.prompts[0]).toMatch(/1\. Tests for the batch, once: `npm run build`; then the tests of what they touch/)
+  expect(r.prompts[0]).toMatch(/## What to do/)
+  const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
+  expect(texto).toMatch(/carrito: checked, agent notified and worktree closed\./)
+  expect(r.enviados.find(m => m.to === 'carrito-e4')?.text).toMatch(/^Branch carrito is merged into main/)
 })
 
 const LISTA_PAGOS = 'La rama ana/pagos está lista para subir (ccc3333)\nSesión: pagos-11\nResumen: pagos con tarjeta.'
@@ -327,7 +482,7 @@ test('resultado_lote acepta el nombre corto y una rama fusionada a mano que no e
   await recibir($, LISTA_ESTILOS)
   texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'estilos', ok: true }] } as never))
   expect(texto).toMatch(/estilos: no está entera en main/)
-  expect(r.ordenes.some(o => o[0] === 'orca' && o.includes('branch:estilos'))).toBe(false)
+  expect(r.ordenes.some(o => o[2] === 'cerrar' && o[3] === 'estilos')).toBe(false)
 })
 
 test('resultado_lote avisa si quedan códigos de la rama sin renumerar', NO_CONTEXTO, async ($, on) => {

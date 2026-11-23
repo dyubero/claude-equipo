@@ -1,12 +1,12 @@
 {
   "name": "claude-equipo",
   "owner": { "name": "dyubero" },
-  "metadata": { "description": "Trabajo en paralelo con agentes de Claude Code en worktrees de Orca" },
+  "metadata": { "description": "Parallel Claude Code agents, each in its own worktree (with Orca or plain git)" },
   "plugins": [
     {
       "name": "equipo",
       "source": "./plugin",
-      "description": "Subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git, skills del flujo de encargos y una skill que lo adapta a cada proyecto"
+      "description": "Merges into the main branch with a dry run and a queue, a context bar, git guards, the skills of the task workflow and one that adapts it to each project. In English and Spanish."
     }
   ]
 }

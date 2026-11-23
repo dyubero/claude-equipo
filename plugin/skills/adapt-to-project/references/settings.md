@@ -2,18 +2,29 @@
 
 All keys are optional: anything missing takes its default (source of truth: `scripts/por-defecto.mjs`). Keys keep
 their Spanish names because the rest of the plugin uses them; values (commands, paths, language) are whatever the
-project needs. Nested objects are merged one level deep, so `{"comandos": {"probar": "pytest"}}` changes only that
+project needs. Nested objects are merged key by key, so `{"comandos": {"probar": "pytest"}}` changes only that
 command.
+
+There are two files, and the project's goes on top:
+
+- `~/.claude/equipo.json` — the person's own settings for all their repositories (their launcher, their context-bar
+  thresholds, their branch prefix). Never committed. Do not put project matters here.
+- `<project>/.claude/equipo.json` — the project's settings, committed on the main branch. This is the file you write.
+
+`node <scripts>/ajustes.mjs --origen` shows which file each value comes from; `--comprobar` reports unknown keys, wrong
+types and invalid values (exit code 1 if any). Start the file with
+`"$schema": "https://raw.githubusercontent.com/dyubero/claude-equipo/main/plugin/equipo.schema.json"` so editors
+complete and check it.
 
 | Key | Default | What it does | When to change it |
 |---|---|---|---|
 | `ramaPrincipal` | `"main"` | Branch every task branch is merged into. Guards, dry runs and the batch check all use it. | The project uses `master`, `trunk`, `develop`… |
-| `idioma` | `"es"` | Language (ISO 639-1 code: `en`, `es`, `fr`, `de`, `pt`, `ja`…) agents write commits, notices and docs in. Skills read it. | Almost always set it explicitly to the team's language. |
-| `comandos.compilar` | `"npm run build"` | Checks that the code compiles (build, type check, lint): run once per batch and after a worktree pulls the main branch. `""` if there is nothing to compile. | Any non-npm project, or when CI's "must pass" is more than the build. |
-| `comandos.probar` | `"npm test"` | The whole test suite. Used when the tests touched by a batch cannot be narrowed down. | Any non-npm project; leave out slow suites if the user prefers. |
+| `idioma` | `"es"` | Language (ISO 639-1 code: `en`, `es`, `fr`, `de`, `pt`, `ja`…) agents write commits, notices and docs in; skills read it. Also the language of the plugin's own texts (the bar, its messages to agents, the merge commit message): Spanish for `es`, English for `en` and for any language without a catalogue. | Always set it explicitly to the team's language. |
+| `comandos.compilar` | `""` | Checks that the code compiles (build, type check, lint): run once per batch and after a worktree pulls the main branch. `""` if there is nothing to compile. | Always: there is no default, it depends on the project. Include what CI requires beyond the build. |
+| `comandos.probar` | `""` | The whole test suite. Used when the tests touched by a batch cannot be narrowed down. | Always: there is no default. Leave out slow suites if the user prefers. |
 | `comandos.probarArchivos` | `""` | Runs only some tests: `{archivos}` is replaced by the list of test files. Empty means always use `probar`. | The runner accepts files (vitest, jest, pytest, rspec, phpunit, mix, dart/flutter, deno…) and the full suite is slow. |
 | `comandos.regenerar` | `""` | Rebuilds the `generados` files after a batch is merged (e.g. `npm install`, `uv lock`, `go mod tidy`, a codegen script). | Whenever `generados` is not empty. |
-| `pruebas.patron` | JS/TS `*.test.*` / `*.spec.*` | Regular expression (over paths from the root) that says which files are tests, so the batch check can pick the tests a branch touched. | Any non-JS project; `inspect-project.mjs` proposes one per ecosystem. |
+| `pruebas.patron` | the usual conventions of JS/TS, Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart and Swift | Regular expression (over paths from the root) that says which files are tests, so the batch check can pick the tests a branch touched. | Only when the project names its tests differently (Unity's `Tests/` folders, a custom suffix); `inspect-project.mjs` proposes it then. |
 | `prohibidos` | `[]` | Files or folders (paths from the root, no wildcards; folders end in `/`) that the guard never lets into a commit, in any copy. | Secrets or build output that git does not ignore. Prefer `.gitignore` when it fits; use this for files that must exist untracked. |
 | `generados` | `[]` | Patterns (`.gitattributes` syntax) of derived files: on a merge conflict the current version is kept, and `comandos.regenerar` rebuilds them after the batch. | Lockfiles, codegen output, editor-generated assets. Never real source files: their conflicts would be silently resolved to one side. |
 | `unir` | `[]` | Documents where, if two branches only **append** lines at the same spot, both additions are kept instead of conflicting. | Changelogs, append-only logs, docs where many branches add entries at the end. |
@@ -21,8 +32,18 @@ command.
 | `decisiones.documento` / `prefijo` / `bloque` | `"DESIGN.md"` / `"D"` / `10` | Where the decisions are, how their headings start (`"ADR-"` works), and how many numbers each branch gets. | To match an existing document. |
 | `backlog.activo` | `false` | Backlog as a table with a code in the first cell (`\| T12 \| … \|`). In branches, new codes carry the branch name (`cart-T1`); the main copy renumbers them when merging. | The project keeps such a table and agents add to it. |
 | `backlog.documento` | `"BACKLOG.md"` | The backlog file. | To match an existing file. |
+| `fusion.estrategia` | `"merge"` | How a branch enters the main branch: `"merge"` (a merge commit, `--no-ff`) or `"squash"` (one commit with the whole branch). | The project keeps a linear history of one commit per task. |
+| `contexto.aviso` / `contexto.peligro` | `60` / `80` | Percentages of the context window from which the bar above the prompt turns yellow and red. | A personal preference: it belongs in the user's file, not the project's. |
+| `guardas.barridos` | `true` | In the main copy, reject `git add -A`, `git add .`, `git add -u` and `git commit -a`. `prohibidos` is enforced either way. | The user works in the main copy themselves and wants sweeping adds there. |
+| `worktrees.cerrarAlSubir` | `true` | Close a branch's worktree once the batch check approves it. | The user wants to keep worktrees around after merging (to inspect them, or to reuse them). |
 | `pendientes` | `"docs/pendientes.md"` | Where `/pendiente`, `encargo` and the batch check write what is in progress and what was left untested. | The project already has a TODO or notes file for this. |
+| `worktrees.gestor` | `"auto"` | Who creates and closes task worktrees: `"orca"`, `"git"` (plain `git worktree`), or `"auto"` (Orca when it is in PATH, git otherwise). | To force one of them, e.g. `"git"` on a machine that has Orca but should not use it here. |
+| `worktrees.carpeta` | `"../{repo}-worktrees/{nombre}"` | With git: folder of each worktree, relative to the main copy; `{repo}` is the main copy's folder name and `{nombre}` the task's short name. | The team keeps worktrees somewhere else. |
+| `worktrees.prefijoRama` | `""` | With git: what goes before the task name to form the branch (`"ana/"` gives `ana/cart`). Orca uses its own prefix. | The team prefixes branches (user name, `feat/`). |
+| `lanzar.preajuste` | `"auto"` | With git: how the agent's session is opened. `"auto"` detects it on each machine (tmux when inside tmux, Windows Terminal, Terminal.app or iTerm on macOS, otherwise `manual`); `"manual"` opens nothing and gives the user a command to paste; `"propio"` runs `lanzar.orden`. | The detected one is not what the user wants. Machine-dependent: avoid committing anything but `auto` unless the whole team shares a terminal. |
+| `lanzar.orden` | `[]` | With `"propio"`: the command as a list (program and arguments, no shell), with `{ruta}`, `{nombre}` and `{prompt}` replaced. It must return right away (open a tab or window), not keep Claude in the foreground. | Another terminal or multiplexer: `["kitty", "@", "launch", "--type=tab", "--cwd", "{ruta}", "claude", "{prompt}"]`. |
 | `orca.repo` | `""` | The repository's name in Orca; empty means the name of the main copy's folder. | Orca knows the repository by another name. |
+| `textos` | `{}` | Replaces texts of the plugin with the team's own: `{ "<key>": "<template>" }`. The keys and their `{placeholders}` are in `textos/es.mjs` (and `en.mjs`) in the plugin folder. `ajustes.mjs --comprobar` rejects unknown keys and placeholders the text does not have. | The team wants its own merge commit message (`"fusion.mensaje": "feat({rama}): {resumen}"`, plus `fusion.mensajeSinResumen`) or different wording for a message. Do not offer it unprompted. |
 | `sesionPrincipal` | `""` | How the main session's name starts in `ListAgents`, so worktree agents know whom to notify; empty means derived from the folder name. | The main session is named differently. |
 
 The switches for each piece of the plugin (context bar, merges from the main copy, merge guard, commit guard) are

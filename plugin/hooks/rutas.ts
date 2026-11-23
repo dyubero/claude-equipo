@@ -1,10 +1,11 @@
 // Rutas escritas de cualquier forma (C:\…, C:/…, /c/… de Git Bash, /home/…, ~/…, relativas) llevadas a una sola:
-// minúsculas, barras normales y sin barra final, para poder compararlas. Devuelve null cuando la ruta depende de algo
+// barras normales, sin barra final y, donde el sistema de archivos no distingue mayúsculas (`plegar`: Windows y macOS
+// por defecto), en minúsculas, para poder compararlas. Devuelve null cuando la ruta depende de algo
 // que no se sabe sin ejecutar (una variable que no es $HOME ni $PWD).
 
 const UNIDAD = /^[a-zA-Z]:/
 
-export function normalizar(ruta: string, base: string | null, home: string): string | null {
+export function normalizar(ruta: string, base: string | null, home: string, plegar = true): string | null {
   let texto = ruta.trim().replace(/^["']|["']$/g, '')
   if (texto === '' || texto === '.' || /^\$\(pwd\)$|^\$pwd$|^\(get-location\)$/i.test(texto)) return base
   texto = texto
@@ -23,7 +24,7 @@ export function normalizar(ruta: string, base: string | null, home: string): str
   }
   const raizPosix = !/^[a-zA-Z]:(\/|$)/.test(texto)
   const partes: string[] = []
-  for (const parte of texto.toLowerCase().split('/')) {
+  for (const parte of (plegar ? texto.toLowerCase() : texto).split('/')) {
     if (parte === '' || parte === '.') continue
     if (parte === '..') {
       // No se sube por encima de la unidad (C:) ni de la raíz.

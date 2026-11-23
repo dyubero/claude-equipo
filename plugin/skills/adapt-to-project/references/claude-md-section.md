@@ -7,22 +7,24 @@ Template for the project's CLAUDE.md (or AGENTS.md). Before writing it:
 - if comandos.probarArchivos is empty, replace the "Some tests" line with how to run a narrower set by hand (a test
   filter, a package path) or drop it;
 - drop this comment.
-Keep verbatim, in any language: the skill names (encargo, lista-para-subir, comprobar-lote, estado-ramas), the notice
-sentence «La rama X está lista para subir» and the button labels (Subir, Solucionar). The plugin recognises the notice
-by that exact sentence and draws the buttons itself. A short gloss in the team's language next to them is fine.
+Keep verbatim, in any language: the skill names (encargo, lista-para-subir, comprobar-lote, estado-ramas) and the
+notice's first line (`equipo:lista <branch> <commit>`): the plugin reads the notice by it. Name the buttons as the
+plugin draws them for this project's `idioma`: Subir / Solucionar in Spanish, Merge / Fix otherwise.
 -->
 
-## Parallel work (Orca worktrees and the equipo plugin)
+## Parallel work (one worktree per task, with the equipo plugin)
 
-Each task runs on its own branch, in its own Orca worktree, with its own agent; several can run at once. Check where
+Each task runs on its own branch, in its own worktree, with its own agent; several can run at once. Check where
 you are: in the main copy `.git` is a folder, in a worktree it is a file. The workflow settings are in
 `.claude/equipo.json`.
 
 **In the main copy (`<main branch>`): do not implement tasks here.**
-- For each thing the user asks for, launch a worktree with the `encargo` skill; the user then talks to that agent.
+- For each thing the user asks for, launch a worktree with the `encargo` skill (never `git worktree add` or
+  `orca worktree create` by hand); the user then talks to that agent.
 - This session launches tasks, merges what agents finish, and handles general questions, status and documents.
-- When an agent finishes, its notice "La rama X está lista para subir" shows up above the prompt with a **Subir**
-  button. Pressing it is the user's decision: never merge a branch yourself unless the user asks.
+- When an agent finishes, its notice (a message starting with `equipo:lista <branch> <commit>`) does not reach you:
+  the branch shows up above the user's prompt with a **<Merge | Subir>** button. Pressing it is the user's decision:
+  never merge a branch yourself unless the user asks.
 - After a batch is merged, the plugin asks for one check of the whole batch: follow the `comprobar-lote` skill. Do not
   fix a failing branch here; report it with `resultado_lote` so its own agent fixes it.
 - How the branches are doing: the `estado-ramas` skill, or the `/ramas` panel.

@@ -1,40 +1,43 @@
 ---
 name: estado-ramas
-description: Use when, in the main copy of a repository that works with Orca worktrees, the user asks how the branches or worktrees are going, which are ready, stuck or waiting, what would conflict if uploaded now, or types /estado-ramas.
+description: Use when, in the main copy of a repository that works with the equipo plugin (one worktree per task), the user asks how the branches or worktrees are doing, which are ready, stuck or waiting, what would conflict if merged now, or types /estado-ramas.
 ---
 
-# /estado-ramas — cómo van todas las ramas
+# /estado-ramas — how all the branches are doing
 
-Solo lee: no toca ninguna copia, no fusiona, no cierra worktrees y no avisa a nadie. Lo que haya que hacer, se le
-propone al usuario.
+Read-only: it touches no copy, merges nothing, closes no worktree and notifies nobody. Whatever needs doing is
+proposed to the user.
 
-Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta skill (la «Base directory» que sale al
-cargarla).
+Talk to the user in the language they write to you in.
 
-Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:adapt-to-project`
-(estudia el proyecto y pregunta al usuario cómo compila, prueba y documenta).
+The plugin's scripts are in `../../scripts` relative to this skill's folder (the "Base directory" shown when the skill
+loads). They print Spanish: read their output, do not relay it verbatim.
 
-## Pasos
+If the project has no `.claude/equipo.json`, it is not set up yet: follow the `equipo:adapt-to-project` skill first.
 
-1. `node ../../scripts/estado.mjs` (con la ruta completa). Para cada worktree da:
-   - su fase, su bloque (comentario de Orca) y el estado de su agente;
-   - `+delante/−detrás` de la rama principal y lo que tiene sin confirmar (sin contar los `prohibidos`).
+## Steps
 
-   Después ensaya la subida de todas las que llevan commits: en qué orden entrarían, cuáles chocarían, con quién y en
-   qué archivos, y cuáles tocan archivos generados. Para tratar los datos: `--json`.
-2. La franja de subidas no se ve desde Claude. Si una rama sale «al día, para subir», pregunta al usuario si está en su
-   franja; si no lo está, quizá su agente no mandó el aviso (paso 7 de `equipo:lista-para-subir`).
-3. Cuéntaselo al usuario agrupado, primero lo que necesita algo de él:
+1. `node ../../scripts/estado.mjs` (with the full path). For each worktree it gives:
+   - its phase, its reserved block of decision numbers, and its agent's state (known only with Orca; without it the
+     script prints "sin agente" and the phase is deduced from git alone);
+   - `+ahead/−behind` the main branch, and what it has uncommitted (not counting `prohibidos`).
 
-| Fase | Qué significa | Qué proponer |
+   It then does a dry run of merging every branch that carries commits: in which order they would go in, which would
+   conflict, with which and in which files, and which touch generated files. To process the data: `--json`.
+2. Claude cannot see the bar above the user's prompt. If a branch shows as up to date and ready ("al día, para subir"),
+   ask the user whether it is in their bar; if not, its agent may not have sent the notice (step 7 of
+   `equipo:lista-para-subir`).
+3. Tell the user, grouped, starting with what needs something from them:
+
+| Phase (as the script prints it) | What it means | What to propose |
 |---|---|---|
-| a media fusión | `git merge` sin acabar en el worktree (MERGE_HEAD) | Que su agente lo resuelva; si está parado, avisarle |
-| esperando al usuario | Agente parado, sin estar al día o con cambios sin confirmar | Mirar su sesión: suele tener una pregunta |
-| al día, para subir | Lleva commits, tiene todo lo de la principal y su agente está parado | Si no está en la franja, pedirle el aviso |
-| en marcha | Su agente trabaja | Nada |
-| todo en la principal | No lleva nada que la principal no tenga | Cerrarla con `resultado_lote` ok, si el usuario quiere |
+| a media fusión | An unfinished `git merge` in the worktree (MERGE_HEAD) | Its agent resolves it; if it is idle, tell it |
+| esperando al usuario | Agent idle, not up to date or with uncommitted changes | Look at its session: it usually has a question |
+| al día, para subir | It carries commits, has everything from the main branch, and its agent is idle | If it is not in the bar, ask its agent for the notice |
+| en marcha | Its agent is working | Nothing |
+| todo en la principal | It carries nothing the main branch lacks | Close it with `resultado_lote` ok, if the user wants |
 
-4. Del ensayo, di el orden en que entrarían y, de cada apartada, con quién choca y en qué archivos. Lo que se resuelve
-   solo no cuenta como choque: los documentos de `unir` con solo añadidos, y los `generados`.
+4. From the dry run, say the order they would go in and, for each one left out, what it conflicts with and in which
+   files. What resolves on its own is not a conflict: append-only `unir` documents, and `generados` files.
 
-No pases al usuario la salida en bruto: un resumen corto, con las ramas que necesitan algo primero.
+Do not hand the user the raw output: a short summary, with the branches that need something first.

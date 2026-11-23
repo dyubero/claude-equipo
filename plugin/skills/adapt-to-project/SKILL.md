@@ -1,11 +1,11 @@
 ---
 name: adapt-to-project
-description: Adapts the equipo plugin (parallel agents in Orca worktrees, merges from the main copy, git guards) to the current project - inspects how it builds, tests and documents, asks the user only what cannot be deduced, then writes .claude/equipo.json, verifies the commands, installs the merge drivers and documents the workflow in CLAUDE.md. Use it right after installing the equipo plugin, whenever a project has no .claude/equipo.json, when the plugin reminds the user that the project is not set up, or when the user asks - in any language - to set up, configure, adapt, tune or fix the equipo plugin, the worktree workflow, or the build/test commands the plugin runs (e.g. "adapt the plugin to this project", "prepara el plugin equipo", "configure le plugin pour ce dépôt").
+description: Adapts the equipo plugin (parallel agents, each in its own worktree - with Orca or plain git -, merges from the main copy, git guards) to the current project - inspects how it builds, tests and documents, asks the user only what cannot be deduced, then writes .claude/equipo.json, verifies the commands, installs the merge drivers and documents the workflow in CLAUDE.md. Use it right after installing the equipo plugin, whenever a project has no .claude/equipo.json, when the plugin reminds the user that the project is not set up, or when the user asks - in any language - to set up, configure, adapt, tune or fix the equipo plugin, the worktree workflow, or the build/test commands the plugin runs (e.g. "adapt the plugin to this project", "prepara el plugin equipo", "configure le plugin pour ce dépôt").
 ---
 
 # Adapt the equipo plugin to this project
 
-The equipo plugin brings a ready-made workflow: each task goes to its own Orca worktree with its own agent, finished
+The equipo plugin brings a ready-made workflow: each task goes to its own worktree with its own agent, finished
 branches are merged from the main copy with a dry run first, one check per batch, and git guards that keep agents from
 merging on their own. What changes from project to project — how it compiles, which tests run, which files are
 generated or must never be committed, how decisions and pending work are written down — lives in
@@ -25,7 +25,9 @@ Two principles shape everything below:
 
 The plugin's scripts are in `../../scripts` relative to this skill's folder (the "Base directory" shown when the skill
 loads); below they are written `<scripts>`. Run them with `node` (22 or later). `inspect-project.mjs` prints English;
-the plugin's other scripts and its on-screen texts are in Spanish — read them, don't relay them verbatim.
+the plugin's other scripts print Spanish — read them, don't relay them verbatim. What the plugin shows on screen and
+the messages it sends to agents follow the `idioma` setting: Spanish for `es`, English for `en` and for any language
+it has no catalogue for.
 
 ## 1. Check where you are
 
@@ -49,6 +51,8 @@ Run `node <scripts>/inspect-project.mjs` (add `--json` if you prefer to parse it
 - tracked files that look generated; documents that look like numbered decisions, a coded backlog or a changelog;
 - sensitive files and build folders that git does not ignore;
 - the language and style of the commits, existing agent instructions (CLAUDE.md, AGENTS.md), and tool versions;
+- who will create the worktrees (Orca if it is installed, plain `git worktree` otherwise) and, without Orca, how a new
+  agent session can be opened on this machine (the launcher: tmux, Windows Terminal, Terminal.app, iTerm, or by hand);
 - a **proposed** `.claude/equipo.json` (only what differs from the defaults) and a list of **open questions**.
 
 The script is a starting point, not the answer. Read what it cannot: the README and contributing guide, the CI
@@ -108,7 +112,12 @@ The usual open points, roughly in order of how much they matter:
    branch gets its own block of numbers and codes are renumbered on merge. Pure overhead otherwise: recommend them only
    if the project already works that way or the user wants it.
 5. **Language** of commits and documents, if the commits do not make it clear.
-6. **The CLAUDE.md section** (step 6). Recommend yes: without it the agent in the main copy does not know it must not
+6. **Without Orca: where task worktrees go and how their sessions open.** The defaults (a sibling folder
+   `<repo>-worktrees/`, branch named like the task, launcher detected on each machine) suit most projects, so only
+   ask if the user has a convention (a branch prefix such as `ana/`, a fixed folder) or the detected launcher is
+   `manual` and they would rather have tabs open on their own. `lanzar` depends on the machine, not on the project:
+   leave it on `auto` in the committed file unless the whole team uses the same terminal.
+7. **The CLAUDE.md section** (step 6). Recommend yes: without it the agent in the main copy does not know it must not
    implement tasks there, and worktree agents do not know how to hand their work back.
 
 Do not ask about things the user cannot reasonably know or care about (driver internals, regex patterns). Decide those
@@ -117,10 +126,14 @@ yourself and mention them in the summary.
 ## 4. Write and verify the settings
 
 Write `.claude/equipo.json` with **only** the keys that differ from the defaults — a short file is easier for the team
-to read and keeps future default improvements flowing in. Write it with your file-writing tool, not a shell heredoc:
+to read and keeps future default improvements flowing in. Start it with the `$schema` line from
+`references/settings.md`. Personal preferences the user mentions along the way (their launcher, the context-bar
+thresholds, their branch prefix) go to `~/.claude/equipo.json` instead, and only if they ask for them: that file is
+theirs. Write it with your file-writing tool, not a shell heredoc:
 shells eat the backslashes in `pruebas.patron` and leave invalid JSON. Then:
 
-- `node <scripts>/ajustes.mjs` must print the merged settings without errors.
+- `node <scripts>/ajustes.mjs --comprobar` must report no problems (it catches misspelt keys and invalid values), and
+  `node <scripts>/ajustes.mjs` must print the merged settings.
 - Every command in `comandos` should have run once (step 2, or now if it changed). A command that fails now will fail
   the first batch. Note how long `probar` takes: if it is several minutes, suggest `probarArchivos` (tests for just the
   changed files) when the runner accepts file paths, and try it with a real test file. Leave `probarArchivos` empty
@@ -143,10 +156,10 @@ is none; use AGENTS.md if that is what the project uses). Translate it into the 
 `<placeholders>` with this project's values, drop the lines about decisions or backlog if they are off, and match the
 tone of the existing file. Show the user the final section before writing it.
 
-Two kinds of text stay exactly as they are, whatever the language: the skill names, and the notice
-`La rama <branch> está lista para subir (<commit>)` with the button labels **Subir** and **Solucionar**. The plugin
-recognises the notice by that exact sentence and draws those buttons itself; translating them in CLAUDE.md would only
-confuse the agents. A short gloss in the team's language next to them is fine.
+Some text stays exactly as it is, whatever the language: the skill names, the first line of the notice
+(`equipo:lista <branch> <commit>`) and its labels (`Session:`, `Summary:`, `To review:`). The plugin reads the notice
+by that line and those labels. The buttons are drawn by the plugin in its own language: **Subir** and **Solucionar**
+with `idioma` `es`, **Merge** and **Fix** otherwise — name them in CLAUDE.md as the team will see them.
 
 ## 7. Commit
 
@@ -161,8 +174,10 @@ Tell the user, briefly and in their language:
 
 - what is in the settings and why — what was deduced and what they chose;
 - which commands you ran and whether they passed, and anything left untested;
-- how to start: in this session they describe a task, the `encargo` skill launches it into its own worktree and agent;
-  when that agent finishes, its branch appears above the prompt with **Subir**;
+- how to start: in this session they describe a task, the `encargo` skill launches it into its own worktree and agent
+  (with Orca, in Orca; without it, in a new tab or window of their terminal, or with a command to paste if the
+  launcher is `manual`); when that agent finishes, its branch appears above the prompt with a merge button
+  (**Subir** in Spanish, **Merge** in English);
 - that every piece can be switched off in `/config` (plugin `equipo`), and that they can ask you to change the
   settings at any time.
 
@@ -178,6 +193,6 @@ Tell the user, briefly and in their language:
 | `git add -A` / `git add .` | Rejected by the guard in the main copy; add files one by one |
 | Writing the settings in a worktree | Other worktrees never see them; they belong on the main branch |
 | Pasting the English template into a Spanish (or any other) CLAUDE.md | Agents get mixed-language instructions; translate it |
-| Translating the notice sentence or the button names | The plugin no longer recognises the notice; keep them verbatim |
+| Translating the notice's first line or its labels | The plugin no longer recognises the notice; keep them verbatim |
 | Fixing a broken project without asking | Unrelated changes inside the setup commit; ask, and fix in a separate commit |
 | Writing equipo.json through a heredoc | Backslashes in `pruebas.patron` get lost: invalid JSON |

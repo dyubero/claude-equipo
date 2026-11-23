@@ -1,231 +1,331 @@
 # claude-equipo
 
-> **English summary.** A [Claude Code](https://code.claude.com) plugin for running **several agents at once, each in
-> its own Orca worktree**, and merging their branches into the main branch without stepping on each other: a dry run
-> with `git merge-tree`, a merge queue ordered by fewest conflicts, one check per batch, merge drivers for append-only
-> docs and generated files, and git guards that stop agents from merging on their own. It works with any stack:
-> after installing, ask your agent to **adapt it to your project** (skill `adapt-to-project`) — it inspects how the
-> project builds and tests (Node, Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart, Swift, CMake, Unity, Godot,
-> Unreal, Makefiles, CI), asks you only what it cannot deduce, in your language, and writes the settings. Prompt to
-> give your agent:
->
-> *Install the plugin from https://github.com/dyubero/claude-equipo and adapt it to this project. Study how it builds,
-> tests and documents things, and ask me whatever you need before configuring it.*
->
-> The adaptation skill is in English and talks to you in your language; the rest of the plugin's skills and on-screen
-> texts are currently in Spanish. The documentation below is in Spanish.
+*English · [Español](README.es.md)*
 
-Un plugin de [Claude Code](https://code.claude.com) para trabajar con **varios agentes a la vez, cada uno en su
-worktree de Orca**, y subir sus ramas a la rama principal sin pisarse: tú hablas con
-una sesión en la copia principal, ella lanza cada encargo a un worktree nuevo con su agente, y cuando un agente acaba,
-su rama sale en una franja sobre el prompt con un botón **Subir**.
+A [Claude Code](https://code.claude.com) plugin for working with **several agents at once, each in its own worktree**
+(with Orca or plain `git worktree`), and merging their branches into the main branch without stepping on each other.
+You talk to one session in the main copy; it launches each task into a new worktree with its own agent; and when an
+agent finishes, its branch shows up in a bar above your prompt with a **Merge** button.
 
-Sale de las herramientas de un proyecto que lleva meses trabajando así, con hasta diez ramas en paralelo. Esta copia es
-genérica: lo que cambia de un proyecto a otro (comandos de compilar y probar, archivos que no se suben…) va en un
-archivo de ajustes, y **no hace falta escribirlo a mano: lo prepara tu agente**, estudiando tu proyecto y preguntándote
-lo que no pueda deducir.
+It comes out of the tooling of a project that has worked this way for months, with up to ten branches in parallel. This
+copy is generic: what changes from one project to another (build and test commands, files that must not be
+committed…) lives in a settings file, and **you do not have to write it by hand: your agent does**, by studying your
+project and asking you what it cannot deduce.
 
-## Cómo empezar: dáselo a tu agente
+"Equipo" is Spanish for "team". The plugin started in Spanish, so its skills, commands and settings keep their Spanish
+names (`encargo` is a task, `lista-para-subir` is "ready to merge"); everything you read on screen is in English or
+Spanish, as you choose.
 
-Abre Claude Code en la carpeta de tu proyecto (la copia principal, en la rama principal) y dile:
+## Getting started: hand it to your agent
 
-> Instala el plugin de https://github.com/dyubero/claude-equipo y adáptalo a este
-> proyecto. Lee su README, estudia cómo compila, prueba y documenta el proyecto, y pregúntame lo que necesites antes de
-> dejarlo configurado.
+Open Claude Code in your project's folder (the main copy, on the main branch) and tell it:
 
-Vale en cualquier idioma: el agente te habla en el tuyo y escribe los ajustes y el CLAUDE.md en el del equipo. El
-agente:
+> Install the plugin from https://github.com/dyubero/claude-equipo and adapt it to this project. Read its README, study
+> how the project builds, tests and documents things, and ask me whatever you need before configuring it.
 
-1. instala el plugin (ver «Instalar»);
-2. sigue la skill **`adapt-to-project`**: un script estudia el proyecto (el ecosistema y sus comandos — Node, Python,
-   Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart/Flutter, Swift, CMake, Unity, Godot, Unreal —, objetivos de Makefile,
-   lo que pasa la CI, lockfiles y archivos generados, documentos de diseño, backlog o changelog, archivos sensibles sin
-   ignorar, idioma y estilo de los commits, CLAUDE.md) y propone los ajustes; el agente lee además lo que haga falta
-   (README, CI, configuración de las pruebas);
-3. te pregunta, en un bloque con opciones y una recomendación, solo lo dudoso: qué se pasa para comprobar que compila,
-   qué pruebas al subir, qué archivos son generados o no deben entrar nunca, si quieres decisiones numeradas o backlog…;
-4. escribe `.claude/equipo.json`, prueba los comandos, instala los drivers de fusión y, si quieres, añade a tu
-   CLAUDE.md el apartado del flujo (para que el agente de la copia principal no implemente allí y los de los worktrees
-   sepan avisar);
-5. te cuenta qué ha quedado y cómo se lanza el primer encargo.
+Any language works: the agent talks to you in yours and writes the settings and CLAUDE.md in the team's. The agent:
 
-**Si eres el agente que lo instala** (*if you are the agent installing it*): instálalo como dice «Instalar» y sigue la
-skill `equipo:adapt-to-project`. Si aún no sale en tu lista de skills, lee directamente
-`plugin/skills/adapt-to-project/SKILL.md` de este repositorio y síguela, con los scripts de `plugin/scripts`. No
-escribas los ajustes sin preguntar al usuario lo que no se deduce del proyecto.
+1. installs the plugin (see "Install");
+2. follows the **`adapt-to-project`** skill: a script studies the project (the ecosystem and its commands — Node,
+   Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart/Flutter, Swift, CMake, Unity, Godot, Unreal —, Makefile
+   targets, what CI runs, lockfiles and generated files, design documents, backlog or changelog, sensitive files git
+   does not ignore, the language and style of the commits, CLAUDE.md) and proposes the settings; the agent also reads
+   whatever else is needed (README, CI, test configuration);
+3. asks you, in one block with options and a recommendation, only what is open: what must pass to count as building,
+   which tests run on merge, which files are generated or must never be committed, whether you want numbered decisions
+   or a backlog…;
+4. writes `.claude/equipo.json`, tries the commands, installs the merge drivers and, if you want, adds the workflow
+   section to your CLAUDE.md (so the agent in the main copy does not implement there and the ones in worktrees know how
+   to hand their work back);
+5. tells you what is set up and how to launch the first task.
 
-## Qué lleva
+**If you are the agent installing it:** install it as "Install" says and follow the `equipo:adapt-to-project` skill.
+If it is not in your skill list yet, read `plugin/skills/adapt-to-project/SKILL.md` in this repository directly and
+follow it, with the scripts in `plugin/scripts`. Do not write the settings without asking the user what the project
+does not answer.
 
-| Pieza | Dónde | Qué hace |
+## What is in it
+
+| Piece | Where | What it does |
 |---|---|---|
-| **Franja del contexto** | todas las sesiones | Una línea sobre el prompt: «● Contexto: 84k de 200k usados (42 %) · libres 116k», en amarillo desde el 60 % y en rojo desde el 80 %, y el botón **Compactar** (lo mismo que `/compact`), que no sale mientras Claude trabaja. |
-| **Subidas** | copia principal | El aviso «La rama X está lista para subir (commit)» que manda un agente no le llega a Claude: sale en la franja con **Subir**, **Solucionar** y **Borrar**, más casillas con **Subir marcadas** y **Subir todas**. Ver «Cómo se sube». |
-| **Ensayo** | copia principal | Al llegar cada aviso y al pulsar «Subir», ensaya la subida con `git merge-tree`, sin tocar nada: la franja dice «⚠ chocaría con X: archivos» antes de pulsar, y al subir entra primero lo que menos choca. |
-| **Drivers de fusión** | todas las copias | Los documentos donde dos ramas suelen añadir al final (un CHANGELOG, el documento de diseño, el backlog) se unen solos si los dos lados solo añaden; los archivos generados (`package-lock.json`) se quedan como estaban y se rehacen después. |
-| **`resultado_lote`** | copia principal | Una herramienta que Claude llama tras comprobar el lote: a las ramas que están bien les avisa y les cierra el worktree; a las que fallan les manda el motivo. |
-| **`/ramas`** | todas | Un panel con cada worktree: su comentario de Orca, cuánto lleva que la principal no tiene y al revés, y el estado de su agente. |
-| **`/reservar`** | principal | Solo con decisiones numeradas: el siguiente bloque libre; con el nombre de un worktree, se lo apunta en su comentario de Orca. |
-| **`/pendiente`** | todas | `/pendiente <texto>` lo apunta, con fecha y rama, en «Apuntes rápidos» del documento de pendientes. Sin texto, lista lo apuntado. |
-| **Freno a las fusiones** | worktrees | Una orden que fusiona en la copia principal desde un worktree (`git -C <principal> merge …`, `cd <principal> && git merge …`, `pull`) se niega, explicando al agente cómo avisar. |
-| **Guarda de los commits** | todas | En la copia principal niega `git add -A`, `git add .`, `git add -u`, `git commit -a` / `--all` y `git commit .`. En cualquier copia niega que entren los `prohibidos` de los ajustes (por ejemplo `.env.local` o `dist/`). |
-| **Skill `adapt-to-project`** | principal | Adapta el plugin a tu proyecto: lo estudia, te pregunta lo dudoso, escribe `.claude/equipo.json`, prueba los comandos, instala los drivers y añade el flujo a tu CLAUDE.md. Si la copia principal no tiene ajustes, el plugin te lo recuerda al empezar la sesión. |
-| **Skill `encargo`** | principal | Lanza un encargo: nombre de la rama, bloque de decisiones si se usan, `orca worktree create` con el texto del usuario tal cual y la fila en el documento de pendientes. |
-| **Skill `lista-para-subir`** | worktree | Commit, traer la principal, repetir solo las pruebas que se cruzan y el aviso a la sesión principal con el formato exacto que lee la franja. |
-| **Skill `comprobar-lote`** | principal | Lo que hace Claude cuando la franja le pide comprobar un lote: rehacer lo generado, renumerar el backlog, una sola tanda de pruebas y `resultado_lote`. |
-| **Skill `estado-ramas`** | principal | Cómo va cada worktree (en marcha, esperando al usuario, a media fusión, al día para subir) y con qué chocaría si se subiera ahora. |
+| **Context bar** | every session | A line above the prompt: "● Context: 84k of 200k used (42%) · 116k free", yellow from 60% and red from 80%, with a **Compact** button (the same as `/compact`) that hides while Claude is working. |
+| **Merges** | main copy | The notice an agent sends when it finishes (a message starting with `equipo:lista <branch> <commit>`) does not reach Claude: it shows in the bar with **Merge**, **Fix** and **Dismiss**, plus checkboxes with **Merge checked** and **Merge all**. See "The workflow". |
+| **Dry run** | main copy | When each notice arrives and when you press "Merge", it rehearses the merge with `git merge-tree`, touching nothing: the bar says "⚠ would conflict with X: files" before you press, and on merge the branches that conflict least go first. |
+| **Merge drivers** | every copy | Documents where two branches usually append at the end (a CHANGELOG, the design document, the backlog) merge on their own when both sides only append; generated files (`package-lock.json`) stay as they were and are rebuilt afterwards. |
+| **`resultado_lote`** | main copy | A tool Claude calls after checking the batch: branches that are fine get notified and their worktree closed; failing ones get the reason. |
+| **`/ramas`** | all | A panel with every worktree: its reserved block of decision numbers, how far ahead and behind the main branch it is, and, with Orca, its agent's state. |
+| **`/reservar`** | main | Only with numbered decisions: the next free block; with a worktree's name, reserves it for that worktree. |
+| **`/pendiente`** | all | `/pendiente <text>` notes it, with the date and branch, under "Quick notes" in the pending-work document. With no text, lists what is noted. |
+| **Merge guard** | worktrees | A command that merges into the main copy from a worktree (`git -C <main> merge …`, `cd <main> && git merge …`, `pull`) is refused, with an explanation of how to hand the branch back. |
+| **Commit guard** | all | In the main copy it refuses `git add -A`, `git add .`, `git add -u`, `git commit -a` / `--all` and `git commit .`. In any copy it refuses the files in `prohibidos` (say `.env.local` or `dist/`). |
+| **Skill `adapt-to-project`** | main | Adapts the plugin to your project: studies it, asks you what is open, writes `.claude/equipo.json`, tries the commands, installs the drivers and adds the workflow to your CLAUDE.md. If the main copy has no settings, the plugin reminds you at session start. |
+| **Skill `encargo`** | main | Launches a task: branch name, a new worktree (with Orca or git), a block of decision numbers if they are used, the user's text verbatim in a file the agent reads, its session opened, and a row in the pending-work document. |
+| **Skill `lista-para-subir`** | worktree | Commit, bring the main branch in, rerun only the tests that overlap, and the notice to the main session in the exact format the bar reads. |
+| **Skill `comprobar-lote`** | main | What Claude does when the bar asks it to check a batch: rebuild generated files, renumber the backlog, one test run, and `resultado_lote`. |
+| **Skill `estado-ramas`** | main | How each worktree is doing (working, waiting for the user, mid-merge, up to date and ready) and what it would conflict with if merged now. |
 
-Los textos de los mods y las skills están en español, salvo `adapt-to-project`, que está en inglés y habla al usuario en
-su idioma.
+The skills are written in English and talk to you in your language. What the plugin shows on screen and the messages
+it sends to agents are in English or Spanish, depending on the `idioma` setting (see "Language and texts").
 
-## Requisitos
+## Requirements
 
-- **Claude Code 2.1.292** o posterior (los mods usan la API de *function hooks*, que aún es de acceso anticipado y
-  puede cambiar entre versiones).
-- **Node 22** o posterior en el `PATH`: los scripts y el driver de fusión son `.mjs` sin dependencias.
-- **git 2.38** o posterior (`git merge-tree --write-tree`).
-- **Orca**, con la CLI `orca` en el `PATH`, para los worktrees y sus agentes. Sin Orca funcionan la franja del contexto,
-  las guardas, las subidas y `/ramas` (sin comentarios ni estado de agentes), pero no `encargo` ni el cierre de worktrees.
+- **Claude Code 2.1.292** or later (the mods use the *function hooks* API, which is still in early access and may
+  change between versions).
+- **Node 22** or later in `PATH`: the scripts and the merge driver are dependency-free `.mjs` files.
+- **git 2.38** or later (`git merge-tree --write-tree`).
+- **Orca is optional.** With the `orca` CLI in `PATH`, worktrees and their agents are handled by Orca. Without it, the
+  plugin creates and closes worktrees with `git worktree` and opens each agent's session with a *launcher* (see
+  "Without Orca"). The only thing you lose is the agents' state in `/ramas` and `estado-ramas`.
 
-Probado en Windows; las guardas entienden también rutas de Linux y macOS, pero ahí solo se han probado con las pruebas
-del repositorio.
+It runs on Windows, macOS and Linux. It is used daily on Windows; on macOS and Linux what is checked on every change
+is the repository's test suite (the scripts, against real git repositories, and the mods, against Claude Code's
+simulator), which passes on all three in GitHub Actions. Paths are compared case-insensitively only where the file
+system does not tell case apart (git's `core.ignorecase` says so).
 
-## Instalar
+At session start the plugin warns if it cannot find `node` or if `git` is older than 2.38. With `nvm` or another
+version manager, `node` must be in the `PATH` of the terminal Claude Code is started from.
 
-En una terminal con Claude Code:
+## Without Orca: git worktrees and launchers
+
+Git can create worktrees, but it cannot open terminals. So, without Orca, after creating the worktree the plugin runs
+a *launcher*: a command that opens a tab or a window with `claude` in that folder. With `lanzar.preajuste` set to
+`"auto"` (the default) it is chosen per machine:
+
+| Preset | When `auto` picks it | What it does |
+|---|---|---|
+| `tmux` | the session runs inside tmux | `tmux new-window` in the worktree's folder |
+| `wt` | Windows, with Windows Terminal in `PATH` | a new Windows Terminal tab |
+| `iterm` | macOS, from iTerm2 | a new iTerm2 window |
+| `terminal` | macOS, from any other terminal | a new Terminal.app window |
+| `manual` | none of the above | opens nothing: Claude gives you the command to paste into a new terminal |
+| `propio` | never: you set it yourself | the command in `lanzar.orden`, with `{ruta}`, `{nombre}` and `{prompt}` |
+
+If a launcher fails, the worktree is still created and Claude gives you the command to open the session by hand. With
+`propio` ("own") you can plug in any other terminal, for example kitty:
+
+```json
+"lanzar": { "preajuste": "propio", "orden": ["kitty", "@", "launch", "--type=tab", "--cwd", "{ruta}", "claude", "{prompt}"] }
+```
+
+**What is tested and what is not.** `manual`, `propio`, and creating and closing worktrees with git are tested end to
+end on Windows, macOS and Linux on every change. For the `tmux`, `wt`, `terminal` and `iterm` presets only the way the
+command is put together is tested: they have not yet been run against those terminals for real. If one of them does
+not open the session, the plugin falls back to `manual` and tells you; please report it in an issue.
+
+The task does not travel on a command line. It is written to `.claude/equipo-encargo.md` inside the worktree (git
+ignores it through `<.git>/info/exclude`, so it never ends up in a commit), and the agent starts with one sentence
+telling it to read that file. That is why the task text can carry quotation marks or any other character.
+
+## Install
+
+In a terminal with Claude Code:
 
 ```
 /plugin install equipo --marketplace dyubero/claude-equipo
 ```
 
-Responde `y` para añadir el marketplace, elige el ámbito (el de usuario vale para todos tus proyectos) y deja los
-interruptores como están. Si lo tienes en una carpeta en vez de en GitHub:
+Answer `y` to add the marketplace, pick the scope (user scope covers all your projects) and leave the switches as they
+are. If you have it in a folder rather than on GitHub:
 
 ```sh
-claude plugin marketplace add /ruta/a/claude-equipo
+claude plugin marketplace add /path/to/claude-equipo
 claude plugin install equipo@claude-equipo
 ```
 
-Con la carpeta como marketplace, una sesión lee el plugin de esa carpeta: si cambias algo, basta `/reload-plugins`.
+With the folder as the marketplace, a session reads the plugin from that folder: after changing something,
+`/reload-plugins` is enough.
 
-Las skills nuevas salen en la sesión siguiente (o tras `/reload-plugins`). Después, en cada proyecto:
+New skills show up in the next session (or after `/reload-plugins`). Then, in each project:
 
-1. **Adáptalo:** en la sesión de la copia principal, pide «adapta el plugin equipo a este proyecto» o
-   `/equipo:adapt-to-project` (ver «Cómo empezar»). Deja `.claude/equipo.json` con commit: cada worktree lee el suyo.
+1. **Adapt it:** in the main copy's session, ask "adapt the equipo plugin to this project" or run
+   `/equipo:adapt-to-project` (see "Getting started"). Commit `.claude/equipo.json`: each worktree reads its own copy.
 
-   A mano también se puede: `node <carpeta del plugin>/scripts/inspect-project.mjs` dice lo que se deduce del proyecto y
-   propone los ajustes; `node <carpeta del plugin>/scripts/ajustes.mjs --crear` escribe uno con los valores por defecto
-   (`claude plugin list` dice dónde está el plugin); o copia `ejemplos/equipo.json`.
-2. Abre la sesión de la copia principal **en la raíz del repositorio**. Al empezar, el plugin instala los drivers de
-   fusión en el `.git` del repositorio (ver «Qué toca en tu repositorio»).
+   It can also be done by hand: `node <plugin folder>/scripts/inspect-project.mjs` says what can be deduced from the
+   project and proposes the settings; `node <plugin folder>/scripts/ajustes.mjs --crear` writes a file with the
+   defaults (`claude plugin list` tells you where the plugin is); or copy `ejemplos/equipo.json`.
+2. Open the main copy's session **at the repository root**. At start, the plugin installs the merge drivers in the
+   repository's `.git` (see "What it touches in your repository").
 
-## Ajustes: `.claude/equipo.json`
+## Settings: `.claude/equipo.json`
 
-Todo es opcional; lo que no está vale lo de por defecto. `node <plugin>/scripts/ajustes.mjs` enseña lo que vale en esa
-copia.
+Everything is optional; whatever is missing takes its default. There are two levels, and the project's goes on top:
 
-| Clave | Por defecto | Para qué |
-|---|---|---|
-| `ramaPrincipal` | `"main"` | La rama a la que se suben las demás. |
-| `idioma` | `"es"` | Idioma de los commits, documentos y avisos que escriben los agentes (código ISO: `en`, `es`, `fr`…; lo leen las skills). |
-| `comandos.compilar` | `"npm run build"` | Lo primero que se pasa en el lote y al traer la principal. `""` si no hay. |
-| `comandos.probar` | `"npm test"` | Todas las pruebas. |
-| `comandos.probarArchivos` | `""` | Solo unas pruebas: `{archivos}` se cambia por la lista (p. ej. `"npx vitest run {archivos}"`). Vacío: siempre `probar`. |
-| `comandos.regenerar` | `""` | Rehace los `generados` tras subir (p. ej. `"npm install"` para `package-lock.json`). |
-| `pruebas.patron` | archivos `*.test.*` / `*.spec.*` de JS y TS | Expresión regular que dice qué archivos son pruebas, para elegir las de cada rama. `adapt-to-project` propone la de cada ecosistema (`test_*.py`, `*_test.go`, `*_spec.rb`…). |
-| `prohibidos` | `[]` | Archivos o carpetas (rutas desde la raíz, sin comodines) que nunca entran en un commit. |
-| `generados` | `[]` | Patrones (como en `.gitattributes`) de archivos generados: al fusionar se queda el de la copia actual y luego se rehacen. |
-| `unir` | `[]` | Documentos en los que, si dos ramas solo añaden líneas en el mismo sitio, se conservan las dos. |
-| `decisiones.activo` | `false` | Decisiones numeradas en un documento de diseño (`### D12. Título`), con un bloque de números reservado por rama. |
-| `decisiones.documento` / `prefijo` / `bloque` | `"DESIGN.md"` / `"D"` / `10` | Dónde están, cómo empiezan (`"ADR-"` vale) y cuántas por bloque. |
-| `backlog.activo` | `false` | Backlog con códigos en la primera celda de cada fila (`\| T12 \| … \|`): en las ramas se apuntan con el nombre de la rama delante (`carrito-T1`) y la principal los renumera al subir. |
-| `backlog.documento` | `"BACKLOG.md"` | El backlog. |
-| `pendientes` | `"docs/pendientes.md"` | Donde `/pendiente`, `encargo` y `comprobar-lote` apuntan lo que está en marcha y lo que queda sin probar. |
-| `orca.repo` | `""` | Nombre del repositorio en Orca; vacío, el de la carpeta de la copia principal. |
-| `sesionPrincipal` | `""` | Cómo empieza el nombre de la sesión de la copia principal en `ListAgents`; vacío, el de su carpeta (con `_` → `-`). |
+- **`~/.claude/equipo.json`**, yours across all your repositories: your launcher, your context-bar thresholds, your
+  branch prefix. It is never committed.
+- **`<project>/.claude/equipo.json`**, the project's, committed: how it builds, which tests it runs, what must not be
+  committed.
 
-Los interruptores de cada pieza están en `/config`, en las filas del plugin `equipo`: *Franja del contexto*,
-*Subidas desde la copia principal*, *Freno a las fusiones en la principal* y *Guarda de los commits*.
+`node <plugin>/scripts/ajustes.mjs` shows what applies in that copy; with `--origen`, which file each value comes
+from; with `--comprobar`, misspelt keys and invalid values (the plugin also warns about them at session start). For
+your editor to complete and check the file, start it with:
 
-## El flujo, de un encargo a la subida
-
-1. **Pides algo en la sesión de la copia principal.** Claude sigue la skill `encargo`: elige un nombre corto
-   (`carrito-pago`), reserva un bloque de decisiones si las usas y lanza
-   `orca worktree create … --agent claude --prompt "<tu encargo tal cual>"`. Desde ahí hablas con ese agente, en su
-   worktree. Puedes lanzar varios a la vez.
-2. **El agente trabaja en su rama.** Si intenta fusionar en la principal, la guarda se lo niega y le dice cómo avisar.
-3. **Cuando acaba, sigue `lista-para-subir`:** commit, `git merge main`, compila, repite solo las pruebas que se cruzan
-   con lo que ha traído main y manda a la sesión principal:
-   ```
-   La rama ana/carrito-pago está lista para subir (3f2a9c1)
-   Sesión: carrito-pago-4e
-   Resumen: pago con tarjeta en el carrito
-   Qué cambia: …
-   Probar: npx vitest run src/carrito.test.ts
-   Por revisar:
-   - sin probar en Safari
-   ```
-4. **En la principal, el aviso sale en la franja** (no le llega a Claude): `⇡ ana/carrito-pago (3f2a9c1) · lista para
-   subir`, con el resumen, lo que hay por revisar y, si el ensayo lo ve, «⚠ chocaría con login: src/app.ts».
-5. **Pulsas «Subir»** (o marcas varias y «Subir marcadas», o «Subir todas»). El mod:
-   - ensaya lo que hay en cola contra la principal y ordena de menos a más choques;
-   - aparta la que choca de verdad con la principal y avisa a su agente con los archivos;
-   - fusiona una tras otra con `git merge --no-ff <rama> -m "Fusión de <rama> en main: <resumen>"`; si una choca pese
-     al ensayo, `git merge --abort` y aviso a su agente;
-   - avisa a la que chocaba con otra del lote cuando esa ya ha entrado, para que traiga main de una vez.
-6. **Con la cola vacía, el mod pide a Claude una sola comprobación del lote** (skill `comprobar-lote`): rehacer lo
-   generado si alguna lo toca, renumerar el backlog si lo usas, compilar una vez, las pruebas de lo que tocan una vez, y
-   llamar a `resultado_lote`.
-7. **`resultado_lote`** avisa a cada agente. A los que están bien les cierra el worktree (`orca worktree rm --force`,
-   `git worktree prune`, `git branch -d`); a los que fallan les manda el motivo y su rama queda en la franja como
-   «dentro, pero falla», con **Solucionar**.
-8. **Solucionar** (sale si el aviso trae «Por revisar», o si la rama ha chocado o fallado) pide una indicación opcional
-   y se la manda al agente con lo que tiene que arreglar. El agente arregla, vuelve al paso 3 y su rama vuelve a la
-   franja. **Borrar** solo quita el aviso.
-
-En cualquier momento, `estado-ramas` («¿cómo van las ramas?») dice en qué está cada worktree y con qué chocaría.
-
-## Qué toca en tu repositorio
-
-- **Nada que vaya en los commits.** Los drivers de fusión se instalan en el `.git` común (el de la copia principal,
-  que comparten todos los worktrees):
-  - `<.git>/equipo/fusion.mjs`, una copia del driver, para no depender de dónde esté instalado el plugin;
-  - dos entradas `merge.equipo-docs` y `merge.equipo-generado` en `<.git>/config`;
-  - un bloque marcado en `<.git>/info/attributes` con los archivos de `unir`, `generados` y, si están activos, los
-    documentos de decisiones y backlog.
-
-  Se ponen al día al empezar cada sesión con las subidas activas. Para quitarlos:
-  `node <plugin>/scripts/fusion.mjs desinstalar`.
-- El documento de `pendientes`, que las skills y `/pendiente` escriben (y la principal confirma solo).
-- Lo que ejecuta el mod: `git` (worktree list, rev-list, merge, merge-tree, commit-tree, status, diff, show,
-  branch -d), `orca worktree ps|set|rm` y `node <plugin>/scripts/*.mjs`. Manda mensajes a los agentes con
-  `SendMessage` y pide a Claude la comprobación del lote con un prompt.
-
-## Cómo se prueba
-
-```sh
-npm test            # las dos tandas
-npm run test:scripts  # scripts y driver de fusión, con repositorios temporales de git (node --test)
-npm run test:plugin   # los mods: claude plugin test plugin
-npm run validar     # claude plugin validate --strict del marketplace y del plugin
+```json
+"$schema": "https://raw.githubusercontent.com/dyubero/claude-equipo/main/plugin/equipo.schema.json"
 ```
 
-Las pruebas de los scripts crean ramas que chocan de verdad (en el lockfile, en un documento y en código) en
-repositorios temporales; nunca tocan este repositorio. Las de los mods simulan Claude Code y git.
+The keys are Spanish words; the schema describes each one in English.
 
-Para probar un cambio en el plugin sin reinstalarlo: `claude --plugin-dir plugin`.
+| Key | Default | What it is for |
+|---|---|---|
+| `ramaPrincipal` | `"main"` | The branch the others are merged into. |
+| `idioma` | `"es"` | Language of the commits, documents and notices the agents write (ISO code: `en`, `es`, `fr`…; the skills read it) and of the plugin's own texts: Spanish with `es`, English with `en` and with anything else. |
+| `comandos.compilar` | `""` | The first thing run in the batch check and after bringing the main branch in (`"npm run build"`, `"cargo check"`…). Empty if there is nothing to build. |
+| `comandos.probar` | `""` | The whole test suite (`"npm test"`, `"pytest"`…). |
+| `comandos.probarArchivos` | `""` | Only some tests: `{archivos}` is replaced by the list of files (e.g. `"npx vitest run {archivos}"`). Empty: always `probar`. |
+| `comandos.regenerar` | `""` | Rebuilds the `generados` files after merging (e.g. `"npm install"` for `package-lock.json`). |
+| `pruebas.patron` | the usual conventions of JS/TS, Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart and Swift | Regular expression that says which files are tests, to pick each branch's. Change it only if the project names them differently. |
+| `prohibidos` | `[]` | Files or folders (paths from the root, no wildcards) that never go into a commit. |
+| `generados` | `[]` | Patterns (as in `.gitattributes`) of generated files: on merge the current copy's version is kept, then they are rebuilt. |
+| `unir` | `[]` | Documents where, if two branches only append lines at the same spot, both are kept. |
+| `decisiones.activo` | `false` | Numbered decisions in a design document (`### D12. Title`), with a block of numbers reserved per branch. |
+| `decisiones.documento` / `prefijo` / `bloque` | `"DESIGN.md"` / `"D"` / `10` | Where they are, how they start (`"ADR-"` works) and how many per block. |
+| `backlog.activo` | `false` | Backlog with a code in the first cell of each row (`\| T12 \| … \|`): branches write them with the branch name in front (`cart-T1`) and the main copy renumbers them on merge. |
+| `backlog.documento` | `"BACKLOG.md"` | The backlog. |
+| `fusion.estrategia` | `"merge"` | How each branch goes in: `"merge"` (a merge commit with `--no-ff`) or `"squash"` (a single commit with the whole branch). |
+| `contexto.aviso` / `contexto.peligro` | `60` / `80` | Percentages from which the context bar turns yellow and red. |
+| `guardas.barridos` | `true` | In the main copy, refuse `git add -A` / `.` / `-u` and `git commit -a`. `prohibidos` is enforced either way. |
+| `worktrees.cerrarAlSubir` | `true` | Close a branch's worktree once the batch check approves it. With `false`, the agent is notified and the worktree stays. |
+| `pendientes` | `"docs/pendientes.md"` | Where `/pendiente`, `encargo` and `comprobar-lote` note what is in progress and what was left untested. |
+| `worktrees.gestor` | `"auto"` | Who creates and closes worktrees: `"orca"`, `"git"` or `"auto"` (Orca when it is in `PATH`, git otherwise). |
+| `worktrees.carpeta` | `"../{repo}-worktrees/{nombre}"` | With git: each worktree's folder, relative to the main copy. |
+| `worktrees.prefijoRama` | `""` | With git: what goes before the task name in the branch (`"ana/"` gives `ana/cart`). |
+| `lanzar.preajuste` / `lanzar.orden` | `"auto"` / `[]` | With git: how the agent's session is opened (see "Without Orca"). |
+| `orca.repo` | `""` | The repository's name in Orca; empty, the name of the main copy's folder. |
+| `sesionPrincipal` | `""` | How the main copy's session name starts in `ListAgents`; empty, its folder name (with `_` → `-`). |
+| `textos` | `{}` | Texts of the plugin replaced by yours (see "Language and texts"). |
 
-## Lo que no hace
+The commands have no default because they depend on the project: `adapt-to-project` sets them. Without them, the
+batch check asks Claude to run the tests it can narrow down, without making up any command.
 
-- No lee un intérprete de shell entero: sigue `cd`/`Set-Location`/`pushd`, `git -C`, `--git-dir`/`--work-tree`,
-  `bash -c` y `powershell -Command`. Una ruta con una variable que no es `$HOME`/`$PWD` no se puede saber: el freno la
-  niega igualmente; la guarda de commits la deja pasar.
-- `git push . rama:main` o `git update-ref` desde un worktree no los frena.
-- La cola vive en el mod: si se recargan los plugins a mitad de una subida, las ramas quedan «en cola» sin avanzar;
-  pulsa «Borrar» y que el agente vuelva a avisar.
-- La franja se dibuja en la terminal y en la app de escritorio; en la extensión de VS Code y en `claude -p`, no.
-- Los avisos se reconocen por su primera frase: «La rama X está lista para subir (commit)». Si un agente la escribe de
-  otra forma, no sale en la franja y Claude lo recibe como un mensaje normal.
+Each piece has its switch in `/config`, in the rows of the `equipo` plugin: *Context bar*, *Merges from the main copy*,
+*Merge guard* and *Commit guard*.
 
-## Licencia
+## Language and texts
 
-MIT: ver `LICENSE`.
+The `idioma` setting decides two things: which language the agents write in (commits, documents, the content of their
+notices) and which language the plugin speaks. The plugin has its texts in Spanish and English; for any other language
+it uses English. That covers the bar and its buttons, the toasts, what `/ramas`, `/reservar` and `/pendiente` answer,
+the guards' refusals, the messages to agents, the message of each merge commit, and the batch-check request.
+
+Note that the default is `es`: if you have not adapted the project yet and want English, set `"idioma": "en"` (in the
+project's file or in `~/.claude/equipo.json`). `adapt-to-project` always sets it explicitly.
+
+Any of those texts can be replaced from the settings, with the text's key and a template:
+
+```json
+"textos": {
+  "fusion.mensaje": "feat({rama}): {resumen}",
+  "fusion.mensajeSinResumen": "feat({rama})"
+}
+```
+
+The keys and the placeholders (`{rama}`, `{principal}`…) of each text are in `plugin/textos/en.mjs` and `es.mjs`.
+`ajustes.mjs --comprobar` reports a key that does not exist or a placeholder that text does not have.
+
+What does not change with the language: the names of the skills and commands, the settings' keys, and what the scripts
+in `plugin/scripts` print to the terminal (Spanish; agents read it, you do not).
+
+## The workflow, from a task to the merge
+
+1. **You ask for something in the main copy's session.** Claude follows the `encargo` skill: it picks a short name
+   (`cart-payment`), writes your request verbatim to a file and runs `node <plugin>/scripts/worktree.mjs crear`, which
+   creates the worktree (with Orca or git), reserves a block of decision numbers if you use them, and opens the agent's
+   session. From then on you talk to that agent, in its worktree. You can launch several at once.
+2. **The agent works on its branch.** If it tries to merge into the main branch, the guard refuses and tells it how to
+   hand the branch back.
+3. **When it finishes, it follows `lista-para-subir`:** commit, `git merge main`, build, rerun only the tests that
+   overlap with what main brought, and send the main session:
+   ```
+   equipo:lista ana/cart-payment 3f2a9c1
+   Session: cart-payment-4e
+   Summary: card payments in the cart
+   What changes: …
+   Test: npx vitest run src/cart.test.ts
+   To review:
+   - untested in Safari
+   ```
+   The first line and the labels are fixed (that is how the bar reads it in any language); the content is in the
+   team's language. Spanish labels (`Sesión:`, `Resumen:`, `Por revisar:`) are read too.
+4. **In the main copy, the notice shows in the bar** (it does not reach Claude): `⇡ ana/cart-payment (3f2a9c1) · ready
+   to merge`, with the summary, what there is to review and, if the dry run sees it, "⚠ would conflict with login:
+   src/app.ts".
+5. **You press "Merge"** (or check several and "Merge checked", or "Merge all"). The mod:
+   - rehearses what is queued against the main branch and orders it from fewest to most conflicts;
+   - leaves out a branch that really conflicts with the main branch and tells its agent which files;
+   - merges one after another with `git merge --no-ff <branch> -m "Merge <branch> into main: <summary>"` (or, with
+     `fusion.estrategia` set to `"squash"`, `git merge --squash` and a commit with that message); if one conflicts
+     despite the dry run, it is undone and its agent is told;
+   - tells a branch that conflicted with another one in the batch once that one is in, so it brings main in once.
+6. **With the queue empty, the mod asks Claude for one check of the batch** (skill `comprobar-lote`): rebuild
+   generated files if any branch touches them, renumber the backlog if you use it, build once, run the tests of what
+   they touch once, and call `resultado_lote`.
+7. **`resultado_lote`** notifies each agent. For the ones that are fine it closes the worktree (`worktree.mjs cerrar`:
+   it removes it with Orca or git and deletes the branch; if the worktree still has uncommitted changes it is left
+   open and the bar says so, so nothing is lost); the failing ones get the reason and their branch stays in
+   the bar as "merged, but failing", with **Fix**.
+8. **Fix** (shown when the notice has "To review" items, or when the branch conflicted or failed) asks for an optional
+   note and sends it to the agent with what it has to fix. The agent fixes it, goes back to step 3, and its branch
+   returns to the bar. **Dismiss** only removes the notice.
+
+At any time, `estado-ramas` ("how are the branches doing?") says where each worktree stands and what it would conflict
+with.
+
+## What it touches in your repository
+
+- **Nothing that goes into commits.** The merge drivers are installed in the common `.git` (the main copy's, shared by
+  all worktrees):
+  - `<.git>/equipo/fusion.mjs`, a copy of the driver, so it does not depend on where the plugin is installed;
+  - two entries, `merge.equipo-docs` and `merge.equipo-generado`, in `<.git>/config`;
+  - a marked block in `<.git>/info/attributes` with the files in `unir`, `generados` and, when they are on, the
+    decisions document and the backlog.
+
+  They are refreshed at the start of each session with merges switched on. To remove them:
+  `node <plugin>/scripts/fusion.mjs desinstalar`.
+- Also in the common `.git`: `equipo/reservas.json` (the blocks of decision numbers reserved per branch),
+  `equipo/encargos/` (a copy of each task in progress) and one line in `info/exclude` so git ignores
+  `.claude/equipo-encargo.md` in the worktrees.
+- Without Orca, the worktrees' folder: by default `../<repository>-worktrees/`, next to the main copy.
+- The `pendientes` document, which the skills and `/pendiente` write (and the main copy commits on its own).
+- What the mod runs: `git` (worktree list, rev-list, merge, merge-tree, commit, status, diff, show, config) and
+  `node <plugin>/scripts/*.mjs`, which in turn call `git worktree add|remove`, `git branch -d`,
+  `orca worktree create|ps|set|rm` when Orca is there, and the launcher. It sends messages to the agents with
+  `SendMessage` and asks Claude for the batch check with a prompt.
+
+## How it is tested
+
+```sh
+npm test              # both suites
+npm run test:scripts  # scripts and merge driver, against temporary git repositories (node --test)
+npm run test:plugin   # the mods: claude plugin test plugin
+npm run validar       # claude plugin validate --strict for the marketplace and the plugin
+```
+
+The script tests create branches that really conflict (in the lockfile, in a document and in code) in temporary
+repositories; they never touch this repository. The mod tests simulate Claude Code and git. Both suites run on
+Windows, macOS and Linux in GitHub Actions on every push.
+
+To try a change to the plugin without reinstalling it: `claude --plugin-dir plugin`.
+
+## What it does not do
+
+- It does not read a whole shell interpreter: it follows `cd`/`Set-Location`/`pushd`, `git -C`,
+  `--git-dir`/`--work-tree`, `bash -c` (also `sh`, `zsh`, `fish`, `dash` and `ksh`, and with grouped options:
+  `bash -lc`) and `powershell -Command`. A path with a variable other than `$HOME`/`$PWD` cannot be known: the merge
+  guard refuses it anyway; the commit guard lets it through.
+- `git push . branch:main` or `git update-ref` from a worktree are not stopped.
+- The queue lives in the mod: if plugins are reloaded in the middle of a merge, branches stay "queued" without moving;
+  press "Dismiss" and have the agent notify again.
+- The bar is drawn in the terminal and in the desktop app; not in the VS Code extension or in `claude -p`.
+- Notices are recognised by their first line: `equipo:lista <branch> <commit>`. If an agent writes it differently, it
+  does not show in the bar and Claude gets it as an ordinary message. (The sentence earlier versions used, "La rama X
+  está lista para subir (commit)", is still recognised.)
+- The plugin's texts are in Spanish and English; other languages get English. What the scripts print, and the messages
+  of `ajustes.mjs --comprobar`, are in Spanish only.
+- The `tmux`, `wt`, `terminal` and `iterm` launchers have not yet been run against those terminals for real (see
+  "Without Orca").
+- With `fusion.estrategia` set to `"squash"`, a branch merged by hand (not through the bar) is not closed by
+  `resultado_lote`: its commits are not in the main branch, so the plugin cannot tell that it is fully merged.
+
+## License
+
+MIT: see `LICENSE`.

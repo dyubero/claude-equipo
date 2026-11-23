@@ -2,8 +2,9 @@
 // Solo Node (18 o posterior) y git: sin dependencias.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { delimiter, isAbsolute, join, resolve } from 'node:path'
 
 import { mezclar, POR_DEFECTO } from './por-defecto.mjs'
 
@@ -22,6 +23,46 @@ export function git(args, { repo = '.', ok = [0], entrada, env } = {}) {
   if (r.error) throw new GitError(`git ${args.join(' ')}: ${r.error.message}`)
   if (!ok.includes(r.status)) throw new GitError(`git ${args.join(' ')}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`)
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' }
+}
+
+/**
+ * Ejecuta un programa que no es git (orca, un lanzador…) sin shell. En Windows sí pasa por la shell, que es la que
+ * encuentra los `.cmd`, con cada argumento entre comillas.
+ */
+export function ejecutar(argv, { cwd = '.', timeout = 30000, env } = {}) {
+  const [programa, ...args] = argv.map(String)
+  const entorno = env ?? process.env
+  const opciones = { cwd, encoding: 'utf8', timeout, windowsHide: true, env: entorno }
+  if (process.platform !== 'win32') return spawnSync(programa, args, opciones)
+  // Un .exe se lanza sin shell, con los argumentos tal cual. Solo los .cmd y .bat necesitan cmd.exe, y allí unas
+  // comillas no protegen de `%VAR%` ni de otras comillas: un argumento que las lleve no se lanza.
+  const ruta = /[\\/]/.test(programa) ? programa : rutaEnPath(programa, entorno, 'win32')
+  if (ruta && /\.(exe|com)$/i.test(ruta)) return spawnSync(ruta, args, opciones)
+  const malo = args.find(a => /["%]/.test(a))
+  if (malo !== undefined) return { error: new Error(`no se puede pasar «${malo}» a ${programa} en Windows: lleva comillas dobles o %`), status: null, stdout: '', stderr: '' }
+  // Una barra invertida justo antes de la comilla de cierre la escaparía: se dobla.
+  const cita = a => `"${a.replace(/(\\+)$/, '$1$1')}"`
+  return spawnSync([/\s/.test(programa) ? cita(programa) : programa, ...args.map(cita)].join(' '), { ...opciones, shell: true })
+}
+
+/** La ruta de `programa` en el PATH (con las extensiones de Windows si hace falta), o '' si no está. */
+export function rutaEnPath(programa, env = process.env, plataforma = process.platform) {
+  const extensiones = plataforma === 'win32' ? ['', ...(env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')] : ['']
+  for (const carpeta of (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean)) {
+    for (const ext of extensiones) if (existsSync(join(carpeta, programa + ext))) return join(carpeta, programa + ext)
+  }
+  return ''
+}
+
+/** Las ramas locales, con su nombre entero (aunque haya una etiqueta que se llame igual). */
+export function ramasLocales(repo = '.') {
+  return git(['for-each-ref', '--format=%(refname:lstrip=2)', 'refs/heads'], { repo }).stdout.split(/\r?\n/).filter(Boolean)
+}
+
+/** El directorio .git común a la copia principal y a todos sus worktrees. */
+export function gitComun(repo = '.') {
+  const dicho = git(['rev-parse', '--git-common-dir'], { repo }).stdout.trim()
+  return isAbsolute(dicho) ? dicho : resolve(repo, dicho)
 }
 
 /** «usuario/mi-rama» → «mi-rama»: el nombre del worktree y el prefijo de los códigos del backlog. */
@@ -47,7 +88,7 @@ export function worktrees(repo = '.') {
 
 /** Los worktrees de Orca (`orca worktree ps --json`), o [] si Orca no está. */
 export function orcaWorktrees(repo = '.') {
-  const r = spawnSync('orca', ['worktree', 'ps', '--json'], { cwd: repo, encoding: 'utf8', timeout: 30000, shell: process.platform === 'win32', windowsHide: true })
+  const r = ejecutar(['orca', 'worktree', 'ps', '--json'], { cwd: repo, timeout: 30000 })
   if (r.error || r.status !== 0) return []
   try {
     return JSON.parse(r.stdout)?.result?.worktrees ?? []
@@ -56,12 +97,23 @@ export function orcaWorktrees(repo = '.') {
   }
 }
 
+/** Dos rutas son la misma carpeta. Las mayúsculas solo se ignoran donde el sistema de archivos suele ignorarlas. */
 export const misma = (a, b) => normal(a) === normal(b)
-const normal = r => String(r).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+const PLEGAR = process.platform === 'win32' || process.platform === 'darwin'
+const normal = r => {
+  // La ruta real, si existe: en Windows una carpeta puede venir con su nombre corto (RUNNER~1) y en macOS por un
+  // enlace (/var y /private/var), y git da siempre la real.
+  let real = String(r)
+  try {
+    real = realpathSync.native(real)
+  } catch {}
+  const ruta = real.replace(/\\/g, '/').replace(/\/+$/, '')
+  return PLEGAR ? ruta.toLowerCase() : ruta
+}
 
 /** La rama local que corresponde a un nombre largo, corto o de carpeta; '' si no hay ninguna. */
 export function resolverRama(nombre, repo = '.') {
-  const ramas = git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { repo }).stdout.split(/\s+/).filter(Boolean)
+  const ramas = ramasLocales(repo)
   if (ramas.includes(nombre)) return nombre
   const porCorto = ramas.filter(r => corto(r) === nombre)
   if (porCorto.length === 1) return porCorto[0]
@@ -69,30 +121,41 @@ export function resolverRama(nombre, repo = '.') {
   return ''
 }
 
-// ---------------------------------------------------------------- ajustes del proyecto (.claude/equipo.json)
+// ---------------------------------------------------------------- ajustes (~/.claude/equipo.json y el del proyecto)
 
 export const AJUSTES = '.claude/equipo.json'
 
 export { mezclar, POR_DEFECTO }
 
-/** Los ajustes de la copia en la que está `repo`, con los valores por defecto donde no diga nada. */
-export function ajustes(repo = '.') {
-  let propios = {}
+/** El archivo de ajustes de la persona, para todos sus repositorios (EQUIPO_AJUSTES_USUARIO lo cambia: pruebas). */
+export const ajustesDeUsuario = () => process.env.EQUIPO_AJUSTES_USUARIO || join(homedir(), AJUSTES)
+
+function leerJson(ruta) {
+  if (!existsSync(ruta)) return null
+  try {
+    return JSON.parse(readFileSync(ruta, 'utf8'))
+  } catch (error) {
+    throw new Error(`${ruta} no es JSON válido: ${error.message}`)
+  }
+}
+
+/** Los dos archivos de ajustes: { usuario, proyecto }, cada uno { ruta, datos } (`datos` es null si no existe). */
+export function capas(repo = '.') {
   let r
   try {
     r = raiz(repo)
   } catch {
     r = repo
   }
-  const ruta = join(r, AJUSTES)
-  if (existsSync(ruta)) {
-    try {
-      propios = JSON.parse(readFileSync(ruta, 'utf8'))
-    } catch (error) {
-      throw new Error(`${AJUSTES} no es JSON válido: ${error.message}`)
-    }
-  }
-  return mezclar(POR_DEFECTO, propios)
+  const usuario = ajustesDeUsuario()
+  const proyecto = join(r, AJUSTES)
+  return { usuario: { ruta: usuario, datos: leerJson(usuario) }, proyecto: { ruta: proyecto, datos: leerJson(proyecto) } }
+}
+
+/** Los ajustes que valen en la copia en la que está `repo`: por defecto, los del usuario y, encima, los del proyecto. */
+export function ajustes(repo = '.') {
+  const c = capas(repo)
+  return mezclar(POR_DEFECTO, c.usuario.datos ?? {}, c.proyecto.datos ?? {})
 }
 
 /** Los documentos en los que dos ramas que solo añaden líneas se unen solas: `unir` más los activos. */

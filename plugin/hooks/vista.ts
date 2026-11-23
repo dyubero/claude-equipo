@@ -1,29 +1,31 @@
 // Cómo se escriben las subidas y las ramas en la franja y en /ramas.
 
 import type { EstadoSubida, PanelRamas, Subida } from '../types'
+import type { T } from './idioma'
+import { ES } from './idioma'
 
-export function textoEstado(s: Subida): string {
+export function textoEstado(s: Subida, t: T = ES): string {
   switch (s.estado) {
     case 'lista':
-      return s.porRevisar.length > 0 ? `lista para subir · ${s.porRevisar.length} por revisar` : 'lista para subir'
+      return (s.porRevisar.length > 0 ? t('estado.listaPorRevisar', { n: s.porRevisar.length }) : t('estado.lista')) + (s.sinEnsayo ? t('estado.sinEnsayo') : '')
     case 'en-cola':
-      return 'en cola'
+      return t('estado.enCola')
     case 'fusionando':
-      return 'fusionando…'
+      return t('estado.fusionando')
     case 'fusionada':
-      return `dentro (${s.fusion.slice(0, 9)}) · ${s.detalle || 'falta comprobar el lote'}`
+      return t('estado.fusionada', { commit: s.fusion.slice(0, 9), detalle: s.detalle || t('estado.faltaLote') })
     case 'conflicto':
-      return `conflicto, agente avisado: ${s.detalle}`
+      return t('estado.conflicto', { detalle: s.detalle })
     case 'apartada':
-      return `apartada del lote: ${s.detalle}`
+      return t('estado.apartada', { detalle: s.detalle })
     case 'error':
-      return `no ha entrado: ${s.detalle}`
+      return t('estado.error', { detalle: s.detalle })
     case 'falla':
-      return `dentro, pero falla: ${s.detalle}`
+      return t('estado.falla', { detalle: s.detalle })
     case 'nota':
-      return 'Solucionar: escribe una indicación o pulsa Enter'
+      return t('estado.nota')
     case 'solucion-pedida':
-      return 'arreglo pedido al agente'
+      return t('estado.solucionPedida')
   }
 }
 
@@ -43,14 +45,14 @@ export function borrable(estado: EstadoSubida): boolean {
   return estado !== 'en-cola' && estado !== 'fusionando'
 }
 
-export function resumenRamas(datos: PanelRamas): string {
-  if (datos.error) return `No he podido leer las ramas: ${datos.error}`
+export function resumenRamas(datos: PanelRamas, t: T = ES): string {
+  if (datos.error) return t('ramas.error', { error: datos.error })
   const filas = datos.ramas.map(
     r =>
       `${r.principal ? '★' : r.delante === 0 ? '✔' : '●'} ${r.nombre}${r.comentario ? ` · ${r.comentario}` : ''} · ` +
-      `${r.principal ? 'copia principal' : r.delante === 0 ? 'todo en la principal' : `+${r.delante}/−${r.detras}`}${r.agente ? ` · agente ${r.agente}` : ''}`,
+      `${r.principal ? t('ramas.principal') : r.delante === 0 ? t('ramas.todoDentro') : `+${r.delante}/−${r.detras}`}${r.agente ? ` · ${t('ramas.agente', { estado: r.agente })}` : ''}`,
   )
-  return [...filas, ...(datos.siguiente ? [`Siguiente bloque libre: ${datos.siguiente}`] : [])].join('\n')
+  return [...filas, ...(datos.siguiente ? [t('ramas.siguiente', { bloque: datos.siguiente })] : [])].join('\n')
 }
 
 /** Fecha local AAAA-MM-DD. */

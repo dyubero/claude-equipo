@@ -13,12 +13,14 @@
 // - questions: what the script cannot decide. The agent asks the user, in the user's language.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 import { AJUSTES, argumentos, git, imprimir, POR_DEFECTO, raiz } from './comun.mjs'
+import { detectar } from './lanzadores.mjs'
+import { PATRONES_DE_PRUEBAS } from './por-defecto.mjs'
 
 // ---------------------------------------------------------------- reading helpers
 
@@ -47,8 +49,8 @@ function toolVersion(command) {
 
 /** Test-file patterns (regular expressions over paths from the root) for each ecosystem. */
 export const TEST_PATTERNS = {
-  node: POR_DEFECTO.pruebas.patron,
-  deno: POR_DEFECTO.pruebas.patron,
+  node: PATRONES_DE_PRUEBAS[0],
+  deno: PATRONES_DE_PRUEBAS[0],
   python: '(^|/)(test_[^/]*|[^/]*_test)\\.py$',
   rust: '(^|/)tests/[^/]*\\.rs$',
   go: '_test\\.go$',
@@ -567,6 +569,8 @@ export function inspect(repo = '.') {
 
   facts.instructions = ['CLAUDE.md', '.claude/CLAUDE.md', 'AGENTS.md', 'CLAUDE.local.md'].filter(f => existsSync(join(root, f)))
   facts.tools = { node: process.version, git: toolVersion('git'), orca: toolVersion('orca') }
+  // Without Orca, worktrees are plain git ones and the agent's session is opened by a launcher.
+  facts.worktrees = { manager: facts.tools.orca ? 'orca' : 'git', launcher: detectar() }
   // Task runners only matter if the project has their file; a Makefile is no use on a machine without make.
   for (const [file, tool] of [['Makefile', 'make'], ['makefile', 'make'], ['GNUmakefile', 'make'], ['justfile', 'just'], ['Justfile', 'just'], ['Taskfile.yml', 'task']]) {
     if (file in facts.tasks && !(tool in facts.tools)) facts.tools[tool] = toolVersion(tool)
@@ -624,7 +628,8 @@ export function propose(f) {
   }
   commands.regenerar = joined(eco.map(e => e.regenerate))
   const patterns = [...new Set(eco.map(e => TEST_PATTERNS[e.id]).filter(Boolean))]
-  if (patterns.length > 0 && !(patterns.length === 1 && patterns[0] === POR_DEFECTO.pruebas.patron)) {
+  // The default pattern already covers the usual conventions; only what it does not know goes in the proposal.
+  if (patterns.some(p => !PATRONES_DE_PRUEBAS.includes(p))) {
     proposal.pruebas = { patron: patterns.length === 1 ? patterns[0] : patterns.map(p => `(?:${p})`).join('|') }
   }
   const proposed = Object.values(commands).join(' ')
@@ -661,7 +666,9 @@ export function propose(f) {
   if (f.documents.changelog.length > 0) proposal.unir = f.documents.changelog
   if (f.documents.todo.length > 0 && !backlog) ask(`Is ${f.documents.todo[0]} where pending work gets written down, or use a new ${POR_DEFECTO.pendientes}?`)
 
-  if (!f.tools.orca) ask('Orca is not in PATH: without it there are no task worktrees and branches cannot be closed. Is it installed?')
+  if (f.worktrees.manager === 'git' && f.worktrees.launcher === 'manual') {
+    ask('Orca is not installed and no terminal that can open tabs on its own was detected (tmux, Windows Terminal, Terminal.app, iTerm): each task will give the user a command to paste in a new terminal. Is that fine, or is there a command that opens a new tab or window (lanzar.preajuste "propio")?')
+  }
   ask(f.instructions.length > 0 ? `Add the parallel-work section to ${f.instructions[0]}?` : 'Create a CLAUDE.md with the parallel-work section?')
   return { proposal, questions }
 }
@@ -687,6 +694,7 @@ function summary({ facts: f, proposal, questions }) {
   l.push(`Commits in ${f.commits.language || '?'}${f.commits.style ? ` (${f.commits.style})` : ''}: ${f.commits.examples.map(s => `"${s}"`).join(' ')}`)
   l.push(`Agent instructions: ${f.instructions.join(', ') || 'none'}`)
   l.push(`Tools: node ${f.tools.node}, ${f.tools.git || 'no git'}, ${f.tools.orca ? `orca ${f.tools.orca}` : 'no orca'}`)
+  l.push(`Task worktrees: ${f.worktrees.manager === 'orca' ? 'created and opened by Orca' : `plain git worktrees; sessions opened with the "${f.worktrees.launcher}" launcher`}`)
   l.push('', `Proposed ${AJUSTES}:`, JSON.stringify(proposal, null, 2), '', 'Questions (ask the user, in their language, only those the project does not answer):')
   for (const q of questions) l.push(`- ${q}`)
   return l.join('\n')
@@ -699,4 +707,13 @@ export function main(argv) {
   return 0
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) process.exitCode = main(process.argv.slice(2))
+// Se compara por la ruta real: con un enlace simbólico por medio (en macOS, /var es /private/var), node da a
+// import.meta.url la ruta resuelta y a process.argv[1] la escrita, y sin esto el script acabaría sin hacer nada.
+const real = ruta => {
+  try {
+    return realpathSync.native(ruta)
+  } catch {
+    return resolve(ruta)
+  }
+}
+if (process.argv[1] && real(fileURLToPath(import.meta.url)) === real(process.argv[1])) process.exitCode = main(process.argv.slice(2))

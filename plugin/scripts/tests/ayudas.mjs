@@ -5,6 +5,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+// Las pruebas no leen los ajustes de quien las lanza (~/.claude/equipo.json): un archivo que no existe.
+process.env.EQUIPO_AJUSTES_USUARIO ??= join(tmpdir(), 'equipo-pruebas-sin-ajustes-de-usuario.json')
+
 export function sh(repo, args, ok = [0]) {
   const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true })
   if (!ok.includes(r.status)) throw new Error(`git ${args.join(' ')}: ${r.stderr || r.stdout}`)

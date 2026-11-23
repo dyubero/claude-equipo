@@ -13,7 +13,7 @@ test('git -C <principal> merge se niega y explica cómo avisar a la principal', 
   preparar(on)
   const r = await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge --no-ff ana/carrito -m "Fusión de ana/carrito en main"` })
   expect(negado(r)).toMatch(/desde un worktree no se fusiona en la copia principal/)
-  expect(negado(r)).toMatch(/La rama ana\/carrito está lista para subir \(<commit>\)/)
+  expect(negado(r)).toMatch(/con la primera línea «equipo:lista ana\/carrito <commit>»/)
   expect(negado(r)).toMatch(/equipo:lista-para-subir/)
 })
 
@@ -54,7 +54,34 @@ test('con rutas de Linux o macOS también se niega', async ($, on) => {
   expect(negado(await $.tool.call({ tool: 'Bash', command: 'git merge main' }))).toBeUndefined()
 })
 
-test('apagado en /config, no frena', { options: { fusiones: false } }, async ($, on) => {
+test('en Linux una carpeta que solo cambia en una mayúscula es otra carpeta; en macOS (core.ignorecase), la misma', async ($, on) => {
+  preparar(on, { posix: true })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git -C /home/ana/proyectos/Tienda merge ana/carrito' }))).toBeUndefined()
+})
+
+test('con core.ignorecase, la carpeta escrita con otras mayúsculas es la principal', async ($, on) => {
+  preparar(on, { posix: true, ignoraMayusculas: true })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git -C /home/ana/proyectos/Tienda merge ana/carrito' }))).toMatch(/no se fusiona/)
+})
+
+test('zsh -c, bash -lc y fish -c se siguen como bash -c', async ($, on) => {
+  preparar(on, { posix: true })
+  for (const command of [
+    `zsh -c "git -C ${PRINCIPAL_POSIX} merge ana/carrito"`,
+    `bash -lc "cd ${PRINCIPAL_POSIX} && git merge ana/carrito"`,
+    `fish -c "git -C ${PRINCIPAL_POSIX} merge ana/carrito"`,
+  ]) {
+    expect(negado(await $.tool.call({ tool: 'Bash', command }))).toMatch(/no se fusiona/)
+  }
+})
+
+test('powershell con -exec delante de -Command se sigue leyendo', async ($, on) => {
+  preparar(on)
+  const command = `powershell -exec bypass -Command "git -C ${PRINCIPAL} merge ana/carrito"`
+  expect(negado(await $.tool.call({ tool: 'PowerShell', command }))).toMatch(/no se fusiona/)
+})
+
+test('apagado en /config, no frena',{ options: { fusiones: false } }, async ($, on) => {
   preparar(on)
   expect(negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))).toBeUndefined()
 })
@@ -113,6 +140,32 @@ test('git commit sin -a con un prohibido cambiado sin añadir pasa; con -a, no',
   expect(negado(await $.tool.call({ tool: 'Bash', command: 'git commit -am "x"' }))).toMatch(/dist\/app\.js/)
 })
 
+test('con guardas.barridos apagado, git add -A pasa en la principal, pero los prohibidos siguen sin entrar', async ($, on) => {
+  preparar(on, { enPrincipal: true, ajustes: JSON.stringify({ guardas: { barridos: false }, prohibidos: ['.env.local'] }), estado: '' })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add -A' }))).toBeUndefined()
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git commit -am "x"' }))).toBeUndefined()
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add .env.local' }))).toMatch(/\.env\.local no entra/)
+})
+
+test('los ajustes del usuario (~/.claude/equipo.json) valen en todos sus repositorios, y los del proyecto van encima', async ($, on) => {
+  preparar(on, { ajustesUsuario: JSON.stringify({ prohibidos: ['secretos.txt'], ramaPrincipal: 'trunk' }), ajustes: '{ "ramaPrincipal": "develop" }' })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add secretos.txt' }))).toMatch(/secretos\.txt no entra/)
+  expect(negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))).toMatch(/git merge develop/)
+})
+
+test('con idioma «en», las negativas salen en inglés', async ($, on) => {
+  preparar(on, { ajustes: JSON.stringify({ idioma: 'en', prohibidos: ['.env.local'] }) })
+  const fusion = negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))
+  expect(fusion).toMatch(/a worktree does not merge into the main copy/)
+  expect(fusion).toMatch(/"equipo:lista ana\/carrito <commit>"/)
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add .env.local' }))).toMatch(/\.env\.local never goes into a commit/)
+})
+
+test('un texto cambiado en los ajustes sustituye al del plugin', async ($, on) => {
+  preparar(on, { ajustes: JSON.stringify({ prohibidos: ['.env.local'], textos: { 'guarda.prohibido': 'NO: {ruta}' } }) })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add .env.local' }))).toBe('NO: .env.local')
+})
+
 test('un mensaje en heredoc no confunde a la guarda', async ($, on) => {
   preparar(on, { enPrincipal: true })
   const command = ['git commit -m "$(cat <<\'EOF\'', 'Añade el carrito', '', 'git add -A no va aquí', 'EOF', ')"'].join('\n')
@@ -133,4 +186,7 @@ test('las rutas se comparan igual escritas de cualquier forma', () => {
   expect(normalizar('/c/x', null, '/home/ana')).toBe('/c/x') // en Linux, /c es una carpeta
   expect(normalizar('src', '/home/ana/tienda', '/home/ana')).toBe('/home/ana/tienda/src')
   expect(normalizar('$OTRA/x', '/home/ana', '/home/ana')).toBeNull()
+  // Sin plegar (sistemas de archivos que distinguen mayúsculas), la ruta queda como está escrita.
+  expect(normalizar('/home/Ana/X/../y', null, '/home/Ana', false)).toBe('/home/Ana/y')
+  expect(normalizar('~/Tienda', null, '/Users/Ana', false)).toBe('/Users/Ana/Tienda')
 })

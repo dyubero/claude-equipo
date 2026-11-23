@@ -1,71 +1,79 @@
 ---
 name: lista-para-subir
-description: Use when, in an Orca worktree (not the main copy; .git is a file), the assigned work or a fix requested from the main session is finished and the branch must be offered for upload to the main branch, or when typing /lista-para-subir.
+description: Use when, in a task worktree of the equipo plugin (not the main copy; .git is a file), the assigned work or a fix requested by the main session is finished and the branch must be handed back to be merged into the main branch, or when the user types /lista-para-subir. Also the way out when the plugin's guard refuses a merge into the main copy.
 ---
 
-# /lista-para-subir — avisar de que la rama está lista
+# /lista-para-subir — hand the branch back to be merged
 
-**Solo en un worktree** (`.git` es un archivo). Nunca fusionas en la rama principal: lo hace el usuario desde la sesión
-principal con «Subir» (el plugin equipo lo niega desde aquí). Antes de empezar, las pruebas de lo tuyo ya tienen que
-haber pasado.
+**Only in a worktree** (`.git` is a file). You never merge into the main branch: the user does it from the main session
+by pressing the merge button in the bar above their prompt, and the plugin's guard refuses it from here. Before you
+start, the tests of your own work must already have passed.
 
-Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta skill (la «Base directory» que sale al
-cargarla). Abajo se escriben como `<scripts>`. Los ajustes, con `node <scripts>/ajustes.mjs`.
+Talk to the user in the language they write to you in. Write commits and the notice's content in the team's language:
+the `idioma` setting.
 
-Si el proyecto no tiene `.claude/equipo.json`, valen los ajustes por defecto (`npm run build`, `npm test`): si no
-sirven para este proyecto, dile al usuario que lo prepare en la copia principal con la skill `equipo:adapt-to-project`.
+The plugin's scripts are in `../../scripts` relative to this skill's folder (the "Base directory" shown when the skill
+loads); below they are written `<scripts>`. They print Spanish: read their output, do not relay it verbatim. Settings:
+`node <scripts>/ajustes.mjs`.
 
-## Pasos
+If the project has no `.claude/equipo.json`, the build and test commands are empty: use the ones you know from the
+project (its README, its CI) and tell the user to set it up in the main copy with the `equipo:adapt-to-project` skill.
 
-1. **Commit de lo tuyo:**
-   - archivo a archivo con `git add <ruta>`; nunca los de `prohibidos` (la guarda los niega);
-   - el mensaje, en el idioma de `idioma`, dice qué hace; con decisiones numeradas, lleva sus códigos entre paréntesis.
-   - Con decisiones: solo las del bloque que te reservaron. Con backlog: tus códigos nuevos llevan el nombre corto de
-     la rama delante (`carrito-T1`); **no los renumeres**: lo hace la principal al subir.
-2. **Traer la principal:** `git merge <rama principal>` (sin choques vale el mensaje que pone git).
-   - Los documentos de `unir` (y el de decisiones y el backlog, si están activos) con solo añadidos por los dos lados
-     se unen solos. Los de `generados` se quedan con lo tuyo.
-   - Si choca algo de eso, es que los drivers no están instalados: `git merge --abort`,
-     `node <scripts>/fusion.mjs instalar` y repite.
-   - Otros choques: resuélvelos, compila y `git commit`.
-3. **Qué ha traído la principal:** `node <scripts>/pruebas.mjs ORIG_HEAD..HEAD`. Si no traía nada (`Already up to
-   date`), salta este paso y el 4: basta lo que ya pasaste.
-4. **Repite solo lo que se cruza con lo tuyo:**
-   - si cambian `package.json` o algo de `generados`, instala o rehaz (`comandos.regenerar`) y haz commit solo de lo
-     generado que cambie;
-   - siempre `comandos.compilar`;
-   - las pruebas que `pruebas.mjs` propone y que también son tuyas (con `comandos.probarArchivos` si está puesto);
-   - si nada se cruza, basta compilar. No repitas lo que ya pasó.
-5. **El commit de la punta:** `git rev-parse --short HEAD`.
-6. **Las sesiones**, con `ListAgents` (cárgala con ToolSearch si hace falta):
-   - la tuya es la línea «This session is …»;
-   - la principal es la que empieza por `sesionPrincipal` de los ajustes o, si está vacío, por el nombre de la carpeta
-     de la copia principal (`git worktree list`, la primera; los «_» pasan a «-»). El destinatario de `SendMessage` es
-     ese nombre, tal cual.
-   - Si hay varias o ninguna, no adivines: dile al usuario que avise él y dale el mensaje.
-7. **Aviso** con `SendMessage` a la principal, **exactamente** con este formato (la franja lo lee por sus etiquetas):
+## Steps
+
+1. **Commit your work:**
+   - add files one by one with `git add <path>`; never the ones in `prohibidos` (the guard refuses them);
+   - the message, in the `idioma` language, says what the change does; with numbered decisions, it carries their codes
+     in parentheses.
+   - With decisions: only the numbers of the block reserved for you (it is at the end of your task file,
+     `.claude/equipo-encargo.md`). With a backlog: your new codes carry the branch's short name in front (`cart-T1`);
+     **do not renumber them**, the main copy does it when merging.
+2. **Bring the main branch in:** `git merge <main branch>` (with no conflicts, git's own message is fine).
+   - Documents in `unir` (and the decisions document and the backlog, when on) where both sides only appended merge on
+     their own. Files in `generados` keep your side.
+   - If one of those conflicts, the merge drivers are not installed: `git merge --abort`,
+     `node <scripts>/fusion.mjs instalar`, and merge again.
+   - Other conflicts: resolve them, build, and `git commit`.
+3. **What the main branch brought:** `node <scripts>/pruebas.mjs ORIG_HEAD..HEAD`. If it brought nothing (`Already up
+   to date`), skip this step and the next: what you already ran is enough.
+4. **Rerun only what overlaps with your work:**
+   - if a dependency manifest or something in `generados` changed, install or rebuild (`comandos.regenerar`) and commit
+     only the generated files that change;
+   - always `comandos.compilar`, when it is set;
+   - the tests `pruebas.mjs` proposes that are also yours (with `comandos.probarArchivos` when it is set);
+   - if nothing overlaps, building is enough. Do not repeat what already passed.
+5. **The tip commit:** `git rev-parse --short HEAD`.
+6. **The sessions**, with `ListAgents` (load it with ToolSearch if needed):
+   - yours is the line "This session is …";
+   - the main one starts with `sesionPrincipal` from the settings or, if that is empty, with the name of the main copy's
+     folder (`git worktree list`, the first one; "_" becomes "-"). The `SendMessage` recipient is that name, as is.
+   - With several candidates or none, do not guess: tell the user to notify the main session themselves and give them
+     the message.
+7. **The notice**, with `SendMessage` to the main session. The first line is fixed and the labels are in English,
+   whatever the language of the content: the bar reads the notice by them.
    ```
-   La rama <rama completa, p. ej. ana/carrito> está lista para subir (<commit corto>)
-   Sesión: <tu sesión>
-   Resumen: <una línea para el mensaje de la fusión, con los códigos si los hay>
-   Qué cambia: …
-   Decisiones: …
-   Probar: <qué pruebas conviene pasar en la principal>
-   Por revisar:
-   - <lo que no está bien, no has podido probar o el usuario tiene que mirar; quita el apartado si no hay nada>
+   equipo:lista <full branch, e.g. ana/cart> <short commit>
+   Session: <your session>
+   Summary: <one line for the merge commit message, with the decision codes if any>
+   What changes: …
+   Decisions: …
+   Test: <which tests are worth running in the main copy>
+   To review:
+   - <what is not right, what you could not test, what the user must look at; drop the section if there is nothing>
    ```
-   Lo que no has repetido tras traer la principal porque no se cruzaba no va en «Por revisar».
-8. **Al usuario:** que está lista para subir y, en una línea, qué has probado (antes y después de traer la principal) y
-   qué no. Después espera:
-   - si la principal avisa de que se ha subido, el worktree se cierra solo;
-   - si avisa de un choque, de que la ha apartado o de un fallo, arréglalo y vuelve al paso 1.
+   What you did not rerun after bringing the main branch in because it did not overlap does not go under "To review".
+8. **Tell the user** it is ready to be merged and, in one line, what you tested (before and after bringing the main
+   branch in) and what you did not. Then wait:
+   - if the main session says it is merged, your worktree is closed for you (or stays open, if the project keeps them);
+   - if it reports a conflict, that it was left out of the batch, or a failure, fix it and go back to step 1.
 
-## Errores comunes
+## Common mistakes
 
-| Error | Consecuencia |
+| Mistake | What happens |
 |---|---|
-| Avisar sin traer la principal | Choca al subir y vuelta a empezar |
-| «Lista para subir» con otras palabras | No sale en la franja |
-| Renumerar el backlog en la rama | Choca con otras ramas; eso lo hace la principal |
-| Repetir todas las pruebas tras traer la principal | Tiempo perdido: solo lo que se cruza |
-| `git merge` hacia la principal o `git push` | La guarda lo niega; no lo rodees |
+| Notifying without bringing the main branch in | It conflicts on merge, and the round starts again |
+| A first line other than `equipo:lista <branch> <commit>` | It does not show in the bar; the main session's Claude gets it as an ordinary message |
+| Translating the labels (`Session:`, `Summary:`, `To review:`) | The bar misses the session or the items to review; only Spanish and English labels are read |
+| Renumbering the backlog in the branch | It conflicts with other branches; the main copy does that |
+| Rerunning every test after bringing the main branch in | Wasted time: only what overlaps |
+| `git merge` into the main branch, or `git push` | The guard refuses it; do not work around it |

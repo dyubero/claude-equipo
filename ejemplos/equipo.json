@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/dyubero/claude-equipo/main/plugin/equipo.schema.json",
   "$comentario": "Ejemplo de .claude/equipo.json para una web con Vite y Vitest. Las claves que empiezan por $ no cuentan. Lo que no esté, vale lo de por defecto (node <plugin>/scripts/ajustes.mjs lo enseña).",
   "ramaPrincipal": "main",
   "idioma": "es",

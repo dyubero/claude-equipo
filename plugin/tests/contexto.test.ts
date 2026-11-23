@@ -62,6 +62,33 @@ test('se pone al día tras cada turno y avisa con color al llenarse', async ($, 
   expect((linea?.props as { color?: string } | undefined)?.color).toBe('error')
 })
 
+test('los umbrales de aviso y peligro salen de los ajustes (contexto.aviso y contexto.peligro)', async ($, on) => {
+  preparar(on, 50_000)
+  on('session.root', () => ({ value: 'C:/x' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('x/.claude/equipo.json') ? { value: '{ "contexto": { "aviso": 20, "peligro": 40 } }' } : { deny: 'no existe' }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  await arrancar($)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  // 25 % usado: por defecto ni avisa; con el aviso en el 20 %, sale en amarillo.
+  const linea = await ui.find({ type: 'Text', text: /◆ Contexto: 50k de 200k usados \(25 %\)/ })
+  expect(linea).toBeDefined()
+  expect((linea?.props as { color?: string } | undefined)?.color).toBe('warning')
+})
+
+test('con idioma «en», la franja del contexto sale en inglés, con punto decimal', async ($, on) => {
+  preparar(on, 84_500)
+  on('session.root', () => ({ value: 'C:/x' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('x/.claude/equipo.json') ? { value: '{ "idioma": "en" }' } : { deny: 'no existe' }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  await arrancar($)
+  await $.session.measure({ context: { tokens: 1_500, window: 200_000, percent: 1 }, rateLimits: [], changed: ['context'] } as never)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '● Context: 1.5k of 200k used (1%) · 199k free' })).toBeDefined()
+  expect((await ui.find({ key: 'compactar' }))?.props).toMatchObject({ label: 'Compact' })
+})
+
 test('«Compactar» compacta y pone la cifra al día', async ($, on) => {
   const r = preparar(on, 120_000)
   await arrancar($)

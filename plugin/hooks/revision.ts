@@ -4,11 +4,13 @@
 
 import type { Ajustes } from './ajustes'
 import { normalizarProhibidos } from './commits'
+import type { T } from './idioma'
+import { ES } from './idioma'
 import { codigosSinRenumerar } from './subidas'
 
 export type Entrada = {
   rama: string
-  /** El bloque reservado a la rama (comentario de Orca), si se sabe. */
+  /** El bloque reservado a la rama, si se sabe. */
   bloque: [number, number] | null
   /** `git rev-list --parents -n 1 <commit>`: el commit y sus padres. */
   padres: string
@@ -24,7 +26,7 @@ export type Entrada = {
 
 export type Revision = { lineas: string[]; problemas: number; generados: boolean }
 
-export function revisar(x: Entrada, a: Ajustes): Revision {
+export function revisar(x: Entrada, a: Ajustes, t: T = ES): Revision {
   const lineas: string[] = []
   let problemas = 0
   const mal = (texto: string) => {
@@ -36,11 +38,14 @@ export function revisar(x: Entrada, a: Ajustes): Revision {
 
   const padres = x.padres.trim().split(/\s+/).filter(Boolean)
   if (padres.length === 0) {
-    mal('el commit no existe en esta copia (¿se ha fusionado en otra carpeta?)')
+    mal(t('revision.noExiste'))
     return { lineas, problemas, generados: false }
   }
-  if (padres.length < 3) mal('el commit no es una fusión (--no-ff)')
-  else bien('es una fusión')
+  if (a.fusion.estrategia === 'squash') {
+    if (padres.length === 2) bien(t('revision.squash'))
+    else mal(t('revision.noSquash'))
+  } else if (padres.length < 3) mal(t('revision.noFusion'))
+  else bien(t('revision.fusion'))
 
   const cambios = x.archivos
     .replace(/\r/g, '')
@@ -51,8 +56,8 @@ export function revisar(x: Entrada, a: Ajustes): Revision {
   const prohibidos = normalizarProhibidos(a.prohibidos)
   const esProhibido = (ruta: string) => prohibidos.some(p => ruta.toLowerCase() === p || ruta.toLowerCase().startsWith(`${p}/`))
   const ajenos = cambios.filter(esProhibido)
-  if (ajenos.length > 0) mal(`han entrado archivos prohibidos: ${ajenos.join(', ')}`)
-  else bien(`${cambios.length} archivos${prohibidos.length > 0 ? ', ninguno prohibido' : ''}`)
+  if (ajenos.length > 0) mal(t('revision.prohibidos', { archivos: ajenos.join(', ') }))
+  else bien(t(prohibidos.length > 0 ? 'revision.archivosSinProhibidos' : 'revision.archivos', { n: cambios.length }))
 
   const { design, backlog } = anadidas(x.diff, a)
   if (a.decisiones.activo) {
@@ -62,24 +67,24 @@ export function revisar(x: Entrada, a: Ajustes): Revision {
       const orden = [...numeros].sort((m, n) => m - n)
       return orden.length === 1 ? `${a.decisiones.prefijo}${orden[0]}` : `${a.decisiones.prefijo}${orden[0]}-${a.decisiones.prefijo}${orden[orden.length - 1]}`
     }
-    if (decisiones.length === 0) nota(`sin decisiones nuevas en ${a.decisiones.documento}`)
+    if (decisiones.length === 0) nota(t('revision.sinDecisiones', { documento: a.decisiones.documento }))
     else if (x.bloque) {
       const [desde, hasta] = x.bloque
       const fuera = decisiones.filter(d => d < desde || d > hasta)
-      if (fuera.length > 0) mal(`decisiones fuera del bloque ${rango([desde, hasta])}: ${fuera.map(d => `${a.decisiones.prefijo}${d}`).join(', ')}`)
-      else bien(`decisiones ${rango(decisiones)}, dentro de su bloque`)
-    } else nota(`decisiones ${rango(decisiones)} (no sé qué bloque tenía la rama)`)
+      if (fuera.length > 0) mal(t('revision.fueraDeBloque', { bloque: rango([desde, hasta]), decisiones: fuera.map(d => `${a.decisiones.prefijo}${d}`).join(', ') }))
+      else bien(t('revision.enBloque', { decisiones: rango(decisiones) }))
+    } else nota(t('revision.sinBloque', { decisiones: rango(decisiones) }))
   }
   if (a.backlog.activo) {
     // Lo que cuenta es lo que queda en el backlog entero tras la fusión, no solo lo añadido.
     const sinRenumerar = codigosSinRenumerar(x.rama, x.backlog ?? backlog.map(l => (l.startsWith('|') ? l : `| ${l} |`)).join('\n'))
     if (sinRenumerar.length > 0) {
-      mal(`${a.backlog.documento} tiene ${sinRenumerar.length} códigos con el nombre de la rama delante: ${sinRenumerar.slice(0, 4).join(', ')}`)
-    } else if (backlog.length > 0) bien(`ningún código de ${a.backlog.documento} con el nombre de la rama delante`)
+      mal(t('revision.codigos', { documento: a.backlog.documento, n: sinRenumerar.length, codigos: sinRenumerar.slice(0, 4).join(', ') }))
+    } else if (backlog.length > 0) bien(t('revision.sinCodigos', { documento: a.backlog.documento }))
   }
 
   const generados = a.generados.length > 0 && cambios.some(r => a.generados.some(g => coincide(r, g)))
-  if (generados) nota(`toca archivos generados: hay que rehacerlos con ${a.comandos.regenerar ? `\`${a.comandos.regenerar}\`` : 'comandos.regenerar'}`)
+  if (generados) nota(t('revision.generados', { orden: a.comandos.regenerar ? `\`${a.comandos.regenerar}\`` : 'comandos.regenerar' }))
 
   const sucios = x.estado
     .replace(/\r/g, '')
@@ -87,7 +92,7 @@ export function revisar(x: Entrada, a: Ajustes): Revision {
     .filter(l => l.length > 3)
     .map(l => l.slice(3))
     .filter(r => !esProhibido(r))
-  if (sucios.length > 0) nota(`la copia principal tiene ${sucios.length} cambios sin confirmar: ${sucios.slice(0, 4).join(', ')}${sucios.length > 4 ? '…' : ''}`)
+  if (sucios.length > 0) nota(t('revision.sucia', { n: sucios.length, archivos: `${sucios.slice(0, 4).join(', ')}${sucios.length > 4 ? '…' : ''}` }))
 
   return { lineas, problemas, generados }
 }

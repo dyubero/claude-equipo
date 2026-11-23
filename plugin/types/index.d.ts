@@ -10,6 +10,9 @@ export type Contexto = {
   compactando: boolean
   /** Tras compactar, la cifra no se pone al día hasta la siguiente respuesta. */
   compactado: boolean
+  /** Porcentajes desde los que avisa en amarillo y en rojo (contexto.aviso y contexto.peligro de los ajustes). */
+  aviso?: number
+  peligro?: number
 }
 
 /** Una copia del repositorio en el panel de ramas. */
@@ -17,10 +20,10 @@ export type Rama = {
   nombre: string
   rama: string
   ruta: string
-  /** Comentario de Orca (el bloque de decisiones reservado, si se usan). */
+  /** El bloque de decisiones reservado para la rama («D15-D24»), si se usan. */
   comentario: string
   bloque: [number, number] | null
-  /** Estado de sus agentes en Orca (working, done…), separados por comas. */
+  /** Estado de sus agentes según Orca (working, done…), separados por comas; '' sin Orca. */
   agente: string
   principal: boolean
   /** Última actividad según Orca (ms). */
@@ -69,10 +72,14 @@ export type Subida = {
   marcada: boolean
   /** Commit de la fusión en la principal, cuando ha entrado. */
   fusion: string
+  /** La punta de la rama cuando se subió: con «squash» es lo que dice si la rama ha seguido después. */
+  punta?: string
   /** Por qué no ha entrado o qué ha fallado. */
   detalle: string
   /** Con qué chocaría al subirla ahora, según el último ensayo: la principal u otra rama de la franja. */
   choques?: { con: string[]; archivos: string[] }[]
+  /** El último ensayo ha fallado (sin node, git viejo…): no se sabe con qué chocaría. */
+  sinEnsayo?: boolean
   /** El estado de antes de pulsar «Solucionar», para volver con «Cancelar». */
   previo?: EstadoSubida
 }

@@ -1,55 +1,61 @@
 ---
 name: comprobar-lote
-description: Use when, in the main copy of a repository that works with Orca worktrees, the equipo plugin asks to check a batch of branches just merged into the main branch, when a branch was merged by hand and needs checking, or when typing /comprobar-lote.
+description: Use when, in the main copy of a repository that works with the equipo plugin (one worktree per task), the plugin asks to check a batch of branches it has just merged into the main branch, when a branch was merged by hand and needs checking, or when the user types /comprobar-lote.
 ---
 
-# /comprobar-lote — comprobar en la principal lo que acaba de subir
+# /comprobar-lote — check in the main copy what has just been merged
 
-**Solo en la copia principal.** Una sola comprobación por lote: nada de repetir todo ni lo que los agentes ya pasaron.
-No arregles en la principal lo que falla en una rama ni deshagas fusiones sin que lo pida el usuario.
+**Only in the main copy.** One check per batch: do not repeat everything, nor what the agents already ran. Do not fix
+in the main copy what fails in a branch, and do not undo merges unless the user asks.
 
-Los scripts del plugin están en `../../scripts` respecto a la carpeta de esta skill (la «Base directory» que sale al
-cargarla). Abajo se escriben como `<scripts>`. Los ajustes, con `node <scripts>/ajustes.mjs`.
+Talk to the user in the language they write to you in. Write commits and the pending-work document in the team's
+language: the `idioma` setting.
 
-Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigue antes la skill `equipo:adapt-to-project`
-(estudia el proyecto y pregunta al usuario cómo compila, prueba y documenta).
+The plugin's scripts are in `../../scripts` relative to this skill's folder (the "Base directory" shown when the skill
+loads); below they are written `<scripts>`. They print Spanish: read their output, do not relay it verbatim. Settings:
+`node <scripts>/ajustes.mjs`.
 
-Ramas del lote: las de la petición del mod (que trae el aviso de cada agente, con su «Probar:»), o las que diga el
-usuario (su fusión, con `git log --merges --oneline -10`; su aviso, en la conversación). Las apartadas no son del lote:
-el mod ya avisó a sus agentes.
+If the project has no `.claude/equipo.json`, it is not set up yet: follow the `equipo:adapt-to-project` skill first.
 
-## Pasos
+Branches in the batch: the ones in the plugin's request (which carries each agent's notice, with its "Test:" line), or
+the ones the user names (their merge commit, with `git log --merges --oneline -10`, or `git log --oneline -10` when the
+project merges with squash; their notice, in the conversation). Branches left out by the dry run are not part of the
+batch: the plugin has already told their agents.
 
-1. **Generados** (si alguna toca `generados`; lo dice la petición o `pruebas.mjs`): al fusionar se han quedado como
-   estaban donde chocaban. Rehazlos una vez con `comandos.regenerar` y haz commit **uno a uno** solo de lo generado
-   que cambie: «Lote de subidas: generados rehechos tras <ramas>».
-2. **Renumerar** (solo con `backlog.activo`):
-   - `node <scripts>/renumerar.mjs --aplicar <nombres cortos del lote>`. Escribe `viejo → nuevo` y los archivos que
-     cambia.
-   - `node <scripts>/renumerar.mjs --comprobar <nombres cortos del lote>` debe salir con 0.
-   - `node <scripts>/renumerar.mjs` sin nombres enseña los que quedan de ramas anteriores. No los toques sin
-     preguntar: díselos al usuario en el paso 5.
-   - Commit con los archivos que dijo el script y los códigos nuevos en el asunto: «Lote de subidas: códigos de
-     <ramas> renumerados (<T88-T90>)».
-3. **Pruebas, una sola vez.** Propuesta: `node <scripts>/pruebas.mjs <fusión>^1..<fusión> …`, una por rama.
-   - `comandos.compilar`, una vez.
-   - Las pruebas de lo que tocan: primero las del «Probar:» de cada aviso; si no dice nada, las que propone
-     `pruebas.mjs` (con `comandos.probarArchivos` si está puesto). Una prueba que vale para dos ramas se pasa una vez.
-   - Si no sabes acotarlas, `comandos.probar`, una vez para todo el lote.
-4. **Resultado:** la herramienta `mcp__equipo__resultado_lote` con cada rama del lote: `ok`, o el motivo del fallo.
-   Vale el nombre corto. Para una fusionada a mano que no está en la franja, añade `sesion` (la de su agente en
-   `ListAgents`). Si responde «quedan sin renumerar», vuelve al paso 2.
-5. **Al usuario:** qué entró, qué quedó apartado y con quién choca, qué se ha probado y qué no, y los códigos viejos sin
-   renumerar si los hay. En pocas líneas.
-6. **Apuntar lo que queda** en el documento de `pendientes`: quita la fila de «En marcha» de cada rama subida y añade
-   lo que no se ha probado. Commit solo de ese archivo: «Pendientes: <ramas> subidas».
+## Steps
 
-## Errores comunes
+1. **Generated files** (if any branch touches `generados`; the request or `pruebas.mjs` says so): where they
+   conflicted, the merge kept them as they were. Rebuild them once with `comandos.regenerar` and commit, **one by
+   one**, only the generated files that change, with a message such as "Batch: generated files rebuilt after
+   <branches>" in the team's language.
+2. **Renumber** (only with `backlog.activo`):
+   - `node <scripts>/renumerar.mjs --aplicar <short names in the batch>`. It prints `old → new` and the files it
+     changes.
+   - `node <scripts>/renumerar.mjs --comprobar <short names in the batch>` must exit with 0.
+   - `node <scripts>/renumerar.mjs` with no names shows the ones left over from earlier branches. Do not touch them
+     without asking: tell the user in step 5.
+   - Commit the files the script named, with the new codes in the subject: "Batch: codes of <branches> renumbered
+     (<T88-T90>)" in the team's language.
+3. **Tests, once.** A proposal: `node <scripts>/pruebas.mjs <merge>^1..<merge> …`, one range per branch.
+   - `comandos.compilar`, once, when it is set.
+   - The tests of what the branches touch: first the ones under "Test:" in each notice; if it says nothing, the ones
+     `pruebas.mjs` proposes (with `comandos.probarArchivos` when it is set). A test that serves two branches runs once.
+   - If you cannot narrow them down, `comandos.probar`, once for the whole batch. If that is empty too, run the
+     project's suite as its README or CI does, and suggest setting it up with `equipo:adapt-to-project`.
+4. **Result:** the tool `mcp__equipo__resultado_lote` with every branch in the batch: `ok`, or the reason it fails.
+   The short name works. For a branch merged by hand that is not in the bar, add `sesion` (its agent's, from
+   `ListAgents`). If it answers that codes are still not renumbered, go back to step 2.
+5. **Tell the user:** what got in, what was left out and what it conflicts with, what was tested and what was not, and
+   any old codes still not renumbered. In a few lines.
+6. **Note what is left** in the `pendientes` document: remove the "in progress" row of each merged branch and add what
+   was not tested. Commit only that file.
 
-| Error | Consecuencia |
+## Common mistakes
+
+| Mistake | What happens |
 |---|---|
-| Decir «renumerados» sin `--comprobar` | Quedan filas `| rama-T1 |` en el backlog |
-| `git add -A` tras regenerar | La guarda lo niega en la principal: añade uno a uno |
-| Pasar las pruebas una vez por rama | Tiempo perdido: una sola tanda para el lote |
-| No llamar a `resultado_lote` | El worktree no se cierra y el agente no se entera |
-| Arreglar en la principal lo de una rama | No: `resultado_lote` con el motivo y lo arregla su agente |
+| Saying "renumbered" without `--comprobar` | Rows like `| branch-T1 |` stay in the backlog |
+| `git add -A` after rebuilding | The guard refuses it in the main copy: add files one by one |
+| Running the tests once per branch | Wasted time: one run for the batch |
+| Not calling `resultado_lote` | The worktree is not closed and the agent never hears back |
+| Fixing in the main copy what a branch broke | No: `resultado_lote` with the reason, and its agent fixes it |

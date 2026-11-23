@@ -11,9 +11,18 @@ export type Ajustes = {
   generados: string[]
   pruebas: { patron: string }
   pendientes: string
+  fusion: { estrategia: 'merge' | 'squash' }
+  contexto: { aviso: number; peligro: number }
+  guardas: { barridos: boolean }
+  worktrees: { gestor: string; carpeta: string; prefijoRama: string; cerrarAlSubir: boolean }
+  lanzar: { preajuste: string; orden: string[] }
   orca: { repo: string }
   sesionPrincipal: string
+  textos: Record<string, string>
 }
 
+export declare const PATRONES_DE_PRUEBAS: readonly string[]
 export declare const POR_DEFECTO: Readonly<Ajustes>
-export declare function mezclar(base: Readonly<Ajustes>, propios: unknown): Ajustes
+export declare const OPCIONES: Readonly<Record<string, readonly string[]>>
+export declare function mezclar(base: Readonly<Ajustes>, ...capas: unknown[]): Ajustes
+export declare function comprobar(propios: unknown): string[]

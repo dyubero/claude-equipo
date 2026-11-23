@@ -19,9 +19,9 @@
 // Este archivo no importa nada del plugin: se copia solo.
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const DRIVERS = {
   'equipo-docs': ['equipo: une lo que dos ramas añaden a un documento', 'docs %O %A %B %L %P'],
@@ -212,4 +212,13 @@ export function main(argv) {
   return 2
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) process.exitCode = main(process.argv.slice(2))
+// Se compara por la ruta real: con un enlace simbólico por medio (en macOS, /var es /private/var), node da a
+// import.meta.url la ruta resuelta y a process.argv[1] la escrita, y sin esto el script acabaría sin hacer nada.
+const real = ruta => {
+  try {
+    return realpathSync.native(ruta)
+  } catch {
+    return resolve(ruta)
+  }
+}
+if (process.argv[1] && real(fileURLToPath(import.meta.url)) === real(process.argv[1])) process.exitCode = main(process.argv.slice(2))

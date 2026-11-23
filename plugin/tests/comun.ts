@@ -17,6 +17,10 @@ export type Escena = {
   estado?: string
   /** El .claude/equipo.json del proyecto (texto), o nada. */
   ajustes?: string
+  /** El ~/.claude/equipo.json del usuario (texto), o nada. */
+  ajustesUsuario?: string
+  /** Lo que contesta `git config --get core.ignorecase` (macOS por defecto: true). Sin decirlo, git no contesta. */
+  ignoraMayusculas?: boolean
 }
 
 export type Registro = { ordenes: string[][]; toasts: string[] }
@@ -34,7 +38,9 @@ export function preparar(on: On, escena: Escena = {}): Registro {
   })
   on('fs.stat', () => ({ value: { kind: escena.enPrincipal ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', ($, e) => {
-    if (e.path.replace(/\\/g, '/').endsWith('.claude/equipo.json') && escena.ajustes !== undefined) return { value: escena.ajustes }
+    const ruta = e.path.replace(/\\/g, '/').toLowerCase()
+    if (ruta.endsWith('ana/.claude/equipo.json')) return escena.ajustesUsuario === undefined ? { deny: 'no existe' } : { value: escena.ajustesUsuario }
+    if (ruta.endsWith('.claude/equipo.json') && escena.ajustes !== undefined) return { value: escena.ajustes }
     return { deny: 'no existe' }
   })
   on('ui.toast', ($, e) => {
@@ -48,6 +54,7 @@ export function preparar(on: On, escena: Escena = {}): Registro {
     if (argv[1] === 'worktree') {
       return sale(0, `worktree ${principal}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktree.replace(/\\/g, '/')}\nHEAD 2222\nbranch refs/heads/ana/carrito\n`)
     }
+    if (argv.includes('core.ignorecase')) return escena.ignoraMayusculas === undefined ? sale(1) : sale(0, `${escena.ignoraMayusculas}\n`)
     if (argv.includes('status')) return sale(0, escena.estado ?? '')
     return sale(1)
   })
