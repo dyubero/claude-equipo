@@ -1,6 +1,6 @@
 {
   "name": "equipo",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Parallel agents, each in its own worktree (with Orca or plain git): merges into the main branch with a dry run and a queue, a context bar, git guards and the skills of the workflow. In English and Spanish.",
   "author": {
     "name": "dyubero"

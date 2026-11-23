@@ -15,7 +15,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ajustes, argumentos, git, imprimir, misma, orcaWorktrees, resolverRama, worktrees } from './comun.mjs'
+import { ajustes, argumentos, git, imprimir, misma, orcaWorktrees, ramasLocales, resolverRama, worktrees } from './comun.mjs'
 import * as conOrca from './gestores/orca.mjs'
 import { enPath } from './lanzadores.mjs'
 import * as reservas from './reservas.mjs'
@@ -41,8 +41,8 @@ export function siguiente(repo = '.', orca = null) {
   const a = ajustes(repo)
   const { documento, prefijo, bloque: tamaño } = a.decisiones
   const fuentes = {}
-  for (const rama of git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { repo }).stdout.split(/\s+/).filter(Boolean)) {
-    const r = git(['show', `${rama}:${documento}`], { repo, ok: [0, 128] })
+  for (const rama of ramasLocales(repo)) {
+    const r = git(['show', `refs/heads/${rama}:${documento}`], { repo, ok: [0, 128] })
     if (r.status === 0) fuentes[`rama ${rama}`] = mayorDecision(r.stdout, prefijo)
   }
   for (const w of worktrees(repo)) {
@@ -62,7 +62,12 @@ export function siguiente(repo = '.', orca = null) {
  * Reserva el siguiente bloque para una rama. Si ya tiene uno, lo devuelve sin cambiar nada (`yaTenia`).
  * Devuelve { rama, bloque, inicio, fin, yaTenia } o { error }.
  */
-export function reservar(nombre, repo = '.', { orca = null, comentar = null } = {}) {
+export function reservar(nombre, repo = '.', opciones = {}) {
+  // Con el candado echado: dos reservas a la vez no se llevan el mismo bloque.
+  return reservas.conCandado(repo, () => reservarSinCandado(nombre, repo, opciones))
+}
+
+function reservarSinCandado(nombre, repo, { orca = null, comentar = null } = {}) {
   const { prefijo } = ajustes(repo).decisiones
   const rama = resolverRama(nombre, repo)
   if (rama === '') return { error: `no hay ninguna rama «${nombre}»` }

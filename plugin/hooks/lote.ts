@@ -45,7 +45,13 @@ export async function resultado($: EngineInterface, nombre: string, ok: boolean,
   // vale si la rama no se ha movido desde que se subió.
   const entera = (await git('merge-base', '--is-ancestor', `refs/heads/${rama}`, 'HEAD')).exitCode === 0
   if (!entera) {
-    const quieta = a.fusion.estrategia === 'squash' && Boolean(subida?.punta) && (await git('rev-parse', '--verify', `refs/heads/${rama}`)).stdout.trim() === subida?.punta
+    // …y si el commit con el que entró sigue en la principal (no se ha deshecho).
+    const quieta =
+      a.fusion.estrategia === 'squash' &&
+      Boolean(subida?.punta) &&
+      Boolean(subida?.fusion) &&
+      (await git('rev-parse', '--verify', `refs/heads/${rama}`)).stdout.trim() === subida?.punta &&
+      (await git('merge-base', '--is-ancestor', subida?.fusion ?? '', `refs/heads/${principal}`)).exitCode === 0
     if (!quieta) return t('resultado.noEntera', { rama, principal })
   }
   let aviso = ''
@@ -65,7 +71,7 @@ export async function resultado($: EngineInterface, nombre: string, ok: boolean,
   const abierto = ruta !== '' && !misma(ruta, raiz)
   // worktree.mjs quita el worktree (con Orca o con git; lo que quede sin confirmar allí ya no hace falta: la rama está
   // entera en la principal), el registro que pueda quedar en git, la rama y su reserva de bloque.
-  const cierre = (await script($, 'worktree.mjs', ['cerrar', rama, ...(entera ? [] : ['--forzar'])], 180000)) as { cerrado?: boolean; motivo?: string } | null
+  const cierre = (await script($, 'worktree.mjs', ['cerrar', rama, ...(entera ? [] : ['--forzar', '--punta', subida?.punta ?? ''])], 180000)) as { cerrado?: boolean; motivo?: string } | null
   if (!cierre?.cerrado) {
     const porque = (cierre?.motivo ?? t('resultado.sinRespuesta')).slice(0, 200)
     if (subida) await poner($, rama, { estado: 'fusionada', detalle: t('subida.comprobadaSinCerrar', { motivo: porque }) })

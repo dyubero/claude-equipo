@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import * as bloque from '../bloque.mjs'
 import * as ajustesMjs from '../ajustes.mjs'
-import { ajustes, mezclar, POR_DEFECTO } from '../comun.mjs'
+import { ajustes, ejecutar, mezclar, POR_DEFECTO } from '../comun.mjs'
 import { comprobar } from '../por-defecto.mjs'
 import * as estado from '../estado.mjs'
 import * as pruebas from '../pruebas.mjs'
@@ -116,6 +116,13 @@ describe('renumerar', () => {
     } finally {
       borrar(repo)
     }
+  })
+})
+
+describe('ejecutar', () => {
+  test('los argumentos llegan enteros: espacios, y una barra invertida al final', () => {
+    const r = ejecutar([process.execPath, '-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', 'con espacio', 'fin\\', 'otro'])
+    assert.deepEqual(JSON.parse(r.stdout), ['con espacio', 'fin\\', 'otro'])
   })
 })
 

@@ -198,7 +198,8 @@ export async function fusionar($: EngineInterface, rama: string, a: Ajustes): Pr
   await poner($, rama, { estado: 'fusionando' })
   if ((await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0) return fallo(t('subida.mediaFusion', { principal: a.ramaPrincipal }))
   const actual = (await git(['symbolic-ref', '--short', 'HEAD'])).stdout.trim()
-  if (actual !== '' && actual !== a.ramaPrincipal) return fallo(t('subida.otraRama', { actual, principal: a.ramaPrincipal }))
+  // Sin rama (HEAD suelto, o git no contesta) tampoco: la fusión iría a parar a un commit que no es la principal.
+  if (actual !== a.ramaPrincipal) return fallo(t('subida.otraRama', { actual: actual || 'HEAD', principal: a.ramaPrincipal }))
   const punta = await git(['rev-parse', '--verify', `refs/heads/${rama}`])
   if (punta.exitCode !== 0) return fallo(t('subida.noExiste', { rama }))
   const distinta = !punta.stdout.trim().startsWith(subida.commit)

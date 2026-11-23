@@ -56,6 +56,8 @@ type Escena = {
   git?: string
   /** La copia principal tiene cambios añadidos (git add) sin confirmar. */
   indice?: boolean
+  /** La copia principal no está en ninguna rama. */
+  headSuelto?: boolean
 }
 type Enviado = { to: string; text: string }
 
@@ -105,11 +107,13 @@ function preparar(on: On, escena: Escena = {}) {
     }
     if (argv[0] === 'node') return sale(0, 'drivers ya al día')
     if (argv[1] === 'merge-base' && argv[2] === '--is-ancestor') {
+      // Un commit suelto (el de la fusión) sigue en la principal; de las ramas, las que diga la escena.
+      if (!(argv[3] as string).startsWith('refs/heads/')) return sale(0)
       return sale(escena.fusionadas === undefined || escena.fusionadas.includes((argv[3] as string).replace('refs/heads/', '')) ? 0 : 1)
     }
     if (argv[1] === 'show' && argv[2] === 'HEAD:BACKLOG.md') return sale(0, '| T1 | a |\n| pagos-T2 | sin renumerar |\n')
     if (argv.includes('worktree')) return sale(0, PORCELANA)
-    if (argv[1] === 'symbolic-ref') return sale(0, 'main\n')
+    if (argv[1] === 'symbolic-ref') return escena.headSuelto ? sale(128, '', 'fatal: ref HEAD is not a symbolic ref') : sale(0, 'main\n')
     if (argv[1] === 'rev-parse' && argv.includes('MERGE_HEAD')) {
       const choco = r.ordenes.some(o => o[1] === 'merge' && o[2] === '--no-ff' && (escena.chocan ?? []).includes(o[3] as string))
       return sale(choco && !r.ordenes.some(o => o[2] === '--abort') ? 0 : 1)
@@ -397,7 +401,17 @@ test('con fusion.estrategia «squash» entra un solo commit, y la rama se cierra
   // Los commits de la rama no están en main: se cierra a la fuerza, porque su punta es la que se subió.
   const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
   expect(texto).toMatch(/carrito: comprobada, agente avisado y worktree cerrado/)
-  expect(r.ordenes.find(o => o[2] === 'cerrar')?.slice(2)).toEqual(['cerrar', 'carrito', '--forzar'])
+  expect(r.ordenes.find(o => o[2] === 'cerrar')?.slice(2)).toEqual(['cerrar', 'carrito', '--forzar', '--punta', 'aaa1111ffff'])
+})
+
+test('si la copia principal no está en la rama principal (HEAD suelto), no se sube nada', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { headSuelto: true })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.ordenes.some(o => o[1] === 'merge')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /no ha entrado: la copia principal está en HEAD, no en main/ })).toBeDefined()
 })
 
 test('con squash, si hay algo añadido en la copia principal no se sube', NO_CONTEXTO, async ($, on) => {

@@ -9,10 +9,7 @@
 //
 // El lanzador tiene que volver enseguida (abrir una pestaña o una ventana), no dejar a Claude en primer plano.
 
-import { existsSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
-
-import { ejecutar } from './comun.mjs'
+import { ejecutar, rutaEnPath } from './comun.mjs'
 
 export const PREAJUSTES = {
   tmux: ['tmux', 'new-window', '-c', '{ruta}', '-n', '{nombre}', 'claude', '{prompt}'],
@@ -37,11 +34,7 @@ export const NOMBRES = ['auto', ...Object.keys(PREAJUSTES), 'manual', 'propio']
 
 /** `programa` está en el PATH (con las extensiones de Windows si hace falta). */
 export function enPath(programa, env = process.env, plataforma = process.platform) {
-  const extensiones = plataforma === 'win32' ? ['', ...(env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')] : ['']
-  for (const carpeta of (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean)) {
-    for (const ext of extensiones) if (existsSync(join(carpeta, programa + ext))) return true
-  }
-  return false
+  return rutaEnPath(programa, env, plataforma) !== ''
 }
 
 /** El preajuste que vale en esta máquina: lo que se ve desde la terminal en la que corre Claude Code. */

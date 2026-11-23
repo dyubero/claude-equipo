@@ -28,6 +28,8 @@ export function abrir({ ruta, corto, prompt, a, entorno }) {
   return lanzar(a.lanzar, { ruta, nombre: corto, prompt }, { entorno })
 }
 
+/** Quita el worktree. `--force` hace falta por lo que git ignora (dependencias, compilados); lo que no está confirmado
+ *  lo mira antes worktree.mjs. */
 export function cerrar({ principal, ruta }) {
   const r = git(['worktree', 'remove', '--force', ruta], { repo: principal, ok: [0, 1, 128, 255] })
   return r.status === 0 ? { cerrado: true, motivo: '' } : { cerrado: false, motivo: (r.stderr || r.stdout).trim().slice(0, 300) }

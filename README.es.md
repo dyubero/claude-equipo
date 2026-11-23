@@ -248,7 +248,8 @@ escriben los scripts de `plugin/scripts` por la terminal (en español; lo leen l
    generado si alguna lo toca, renumerar el backlog si lo usas, compilar una vez, las pruebas de lo que tocan una vez, y
    llamar a `resultado_lote`.
 7. **`resultado_lote`** avisa a cada agente. A los que están bien les cierra el worktree (`worktree.mjs cerrar`: lo
-   quita con Orca o con git y borra la rama); a los que fallan les manda el motivo y su rama queda en la franja como
+   quita con Orca o con git y borra la rama; si el worktree tiene cambios sin confirmar no lo cierra y la franja lo
+   dice, para no perder nada); a los que fallan les manda el motivo y su rama queda en la franja como
    «dentro, pero falla», con **Solucionar**.
 8. **Solucionar** (sale si el aviso trae «Por revisar», o si la rama ha chocado o fallado) pide una indicación opcional
    y se la manda al agente con lo que tiene que arreglar. El agente arregla, vuelve al paso 3 y su rama vuelve a la

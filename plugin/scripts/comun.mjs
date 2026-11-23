@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { delimiter, isAbsolute, join, resolve } from 'node:path'
 
 import { mezclar, POR_DEFECTO } from './por-defecto.mjs'
 
@@ -31,10 +31,32 @@ export function git(args, { repo = '.', ok = [0], entrada, env } = {}) {
  */
 export function ejecutar(argv, { cwd = '.', timeout = 30000, env } = {}) {
   const [programa, ...args] = argv.map(String)
-  const opciones = { cwd, encoding: 'utf8', timeout, windowsHide: true, env: env ?? process.env }
+  const entorno = env ?? process.env
+  const opciones = { cwd, encoding: 'utf8', timeout, windowsHide: true, env: entorno }
   if (process.platform !== 'win32') return spawnSync(programa, args, opciones)
-  const cita = a => `"${a.replace(/"/g, '\\"')}"`
-  return spawnSync([programa, ...args.map(cita)].join(' '), { ...opciones, shell: true })
+  // Un .exe se lanza sin shell, con los argumentos tal cual. Solo los .cmd y .bat necesitan cmd.exe, y allí unas
+  // comillas no protegen de `%VAR%` ni de otras comillas: un argumento que las lleve no se lanza.
+  const ruta = /[\\/]/.test(programa) ? programa : rutaEnPath(programa, entorno, 'win32')
+  if (ruta && /\.(exe|com)$/i.test(ruta)) return spawnSync(ruta, args, opciones)
+  const malo = args.find(a => /["%]/.test(a))
+  if (malo !== undefined) return { error: new Error(`no se puede pasar «${malo}» a ${programa} en Windows: lleva comillas dobles o %`), status: null, stdout: '', stderr: '' }
+  // Una barra invertida justo antes de la comilla de cierre la escaparía: se dobla.
+  const cita = a => `"${a.replace(/(\\+)$/, '$1$1')}"`
+  return spawnSync([/\s/.test(programa) ? cita(programa) : programa, ...args.map(cita)].join(' '), { ...opciones, shell: true })
+}
+
+/** La ruta de `programa` en el PATH (con las extensiones de Windows si hace falta), o '' si no está. */
+export function rutaEnPath(programa, env = process.env, plataforma = process.platform) {
+  const extensiones = plataforma === 'win32' ? ['', ...(env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')] : ['']
+  for (const carpeta of (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean)) {
+    for (const ext of extensiones) if (existsSync(join(carpeta, programa + ext))) return join(carpeta, programa + ext)
+  }
+  return ''
+}
+
+/** Las ramas locales, con su nombre entero (aunque haya una etiqueta que se llame igual). */
+export function ramasLocales(repo = '.') {
+  return git(['for-each-ref', '--format=%(refname:lstrip=2)', 'refs/heads'], { repo }).stdout.split(/\r?\n/).filter(Boolean)
 }
 
 /** El directorio .git común a la copia principal y a todos sus worktrees. */
@@ -91,7 +113,7 @@ const normal = r => {
 
 /** La rama local que corresponde a un nombre largo, corto o de carpeta; '' si no hay ninguna. */
 export function resolverRama(nombre, repo = '.') {
-  const ramas = git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { repo }).stdout.split(/\s+/).filter(Boolean)
+  const ramas = ramasLocales(repo)
   if (ramas.includes(nombre)) return nombre
   const porCorto = ramas.filter(r => corto(r) === nombre)
   if (porCorto.length === 1) return porCorto[0]

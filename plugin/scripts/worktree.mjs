@@ -2,7 +2,7 @@
 // crean, los cierran y los listan.
 //
 //   node worktree.mjs crear <nombre> --encargo <archivo> [--repo <dir>]   # worktree, rama y sesión del agente
-//   node worktree.mjs cerrar <rama> [--forzar] [--repo <dir>]             # worktree fuera, rama borrada
+//   node worktree.mjs cerrar <rama> [--forzar [--punta <commit>]] [--descartar] [--repo <dir>]   # worktree fuera, rama borrada
 //   node worktree.mjs lista [--repo <dir>]                                # todas las copias, con bloque y agente
 //
 // Siempre escribe JSON. El gestor sale de `worktrees.gestor` de los ajustes: «orca», «git» o «auto» (Orca si está en el
@@ -18,7 +18,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as bloque from './bloque.mjs'
-import { ajustes, argumentos, git, gitComun, imprimir, misma, resolverRama, worktrees } from './comun.mjs'
+import { ajustes, argumentos, corto as cortoDe, git, gitComun, imprimir, misma, ramasLocales, resolverRama, worktrees } from './comun.mjs'
 import * as conGit from './gestores/git.mjs'
 import * as conOrca from './gestores/orca.mjs'
 import { enPath } from './lanzadores.mjs'
@@ -65,62 +65,98 @@ export function crear(corto, archivoEncargo, { repo = '.', gestor = null, entorn
   const copias = worktrees(repo)
   const principal = copias[0].ruta
   const a = ajustes(principal)
-  if (resolverRama(corto, principal) !== '' || copias.some(w => basename(w.ruta.replace(/\\/g, '/')) === corto)) {
+  if (ramasLocales(principal).some(r => r === corto || cortoDe(r) === corto) || copias.some(w => basename(w.ruta.replace(/\\/g, '/')) === corto)) {
     throw new Error(`ya hay una rama o un worktree «${corto}»: elige otro nombre`)
   }
-  // El bloque de decisiones se calcula antes de crear (el encargo tiene que estar escrito cuando arranque el agente) y
-  // se apunta a nombre de la rama en cuanto existe.
   const g = gestor ?? gestorDe(a)
-  const reservado = a.decisiones.activo ? bloque.siguiente(principal, g === conOrca ? null : []) : null
-  const encargo = pedido.replace(/\s*$/, '') + pieDeEncargo(a, reservado?.bloque ?? '')
   const comun = gitComun(principal)
   const copia = join(comun, 'equipo', 'encargos', `${corto}.md`)
-  mkdirSync(dirname(copia), { recursive: true })
-  writeFileSync(copia, encargo)
-  ignorar(comun, ENCARGO)
-
   const prompt = promptDeEncargo(copia, a)
-  const { ruta, rama } = g.crear({ principal, corto, base: a.ramaPrincipal, a, prompt })
-  if (reservado) {
-    reservas.guardar(principal, rama, [reservado.inicio, reservado.fin])
-    if (g === conOrca) conOrca.comentar({ principal, ruta, texto: reservado.bloque })
+  let encargo = ''
+  let reservado = null
+  // El bloque de decisiones se calcula antes de crear (el encargo tiene que estar escrito cuando arranque el agente) y
+  // se apunta a nombre de la rama en cuanto existe. Todo con el candado de las reservas echado: dos encargos lanzados a
+  // la vez no se llevan el mismo bloque.
+  const hacer = () => {
+    reservado = a.decisiones.activo ? bloque.siguiente(principal, g === conOrca ? null : []) : null
+    encargo = pedido.replace(/\s*$/, '') + pieDeEncargo(a, reservado?.bloque ?? '')
+    mkdirSync(dirname(copia), { recursive: true })
+    writeFileSync(copia, encargo)
+    ignorar(comun, ENCARGO)
+    const creado = g.crear({ principal, corto, base: a.ramaPrincipal, a, prompt })
+    if (reservado) reservas.guardar(principal, creado.rama, [reservado.inicio, reservado.fin])
+    return creado
   }
+  const { ruta, rama } = a.decisiones.activo ? reservas.conCandado(principal, hacer) : hacer()
+  if (reservado && g === conOrca) conOrca.comentar({ principal, ruta, texto: reservado.bloque })
   mkdirSync(join(ruta, dirname(ENCARGO)), { recursive: true })
   writeFileSync(join(ruta, ENCARGO), encargo)
   const lanzado = g.abrir({ ruta, corto, prompt, a, entorno })
   return { nombre: corto, ruta, rama, gestor: g.nombre, bloque: reservado?.bloque ?? '', encargo: join(ruta, ENCARGO), ...lanzado }
 }
 
+/** Lo que el worktree tiene sin confirmar (sin contar lo que git ignora ni los `prohibidos` de los ajustes). */
+function sinConfirmar(ruta, prohibidos) {
+  if (!existsSync(ruta)) return []
+  return git(['status', '--porcelain'], { repo: ruta, ok: [0, 128] })
+    .stdout.split(/\r?\n/)
+    .filter(l => l.length > 3)
+    .map(l => l.slice(3))
+    .filter(r => !prohibidos.some(p => r === p || r.startsWith(p.endsWith('/') ? p : `${p}/`)))
+}
+
 /**
- * Cierra el worktree de una rama y borra la rama. Sin `forzar`, solo si la rama está entera en la rama principal.
- * Devuelve { cerrado, rama, ruta, motivo }.
+ * Cierra el worktree de una rama y borra la rama. Devuelve { cerrado, rama, ruta, motivo }. No se pierde nada sin
+ * pedirlo:
+ * - si la rama tiene commits que la principal no tiene, se niega; `forzar` lo permite (con «squash» sus commits no están
+ *   en la principal), y entonces `punta` es el commit en el que tiene que seguir la rama: si se ha movido, se niega;
+ * - si el worktree tiene cambios sin confirmar, se niega; `descartar` los da por perdidos.
  */
-export function cerrar(nombre, { repo = '.', forzar = false, gestor = null } = {}) {
+export function cerrar(nombre, { repo = '.', forzar = false, punta = '', descartar = false, gestor = null } = {}) {
   const copias = worktrees(repo)
   const principal = copias[0].ruta
   const a = ajustes(principal)
   const rama = resolverRama(nombre, principal)
-  if (rama === '') return { cerrado: false, rama: nombre, ruta: '', motivo: `no hay ninguna rama «${nombre}»` }
-  if (rama === a.ramaPrincipal) return { cerrado: false, rama, ruta: '', motivo: `${rama} es la rama principal` }
-  const entera = git(['merge-base', '--is-ancestor', `refs/heads/${rama}`, `refs/heads/${a.ramaPrincipal}`], { repo: principal, ok: [0, 1, 128] }).status === 0
-  if (!entera && !forzar) {
-    return { cerrado: false, rama, ruta: '', motivo: `${rama} tiene commits que ${a.ramaPrincipal} no tiene` }
+  const no = (motivo, ruta = '') => ({ cerrado: false, rama: rama || nombre, ruta, motivo })
+  if (rama === '') return no(`no hay ninguna rama «${nombre}»`)
+  if (rama === a.ramaPrincipal) return no(`${rama} es la rama principal`)
+  const ref = `refs/heads/${rama}`
+  const entera = git(['merge-base', '--is-ancestor', ref, `refs/heads/${a.ramaPrincipal}`], { repo: principal, ok: [0, 1, 128] }).status === 0
+  const ahora = git(['rev-parse', '--verify', ref], { repo: principal, ok: [0, 1, 128] }).stdout.trim()
+  if (!entera) {
+    if (!forzar) return no(`${rama} tiene commits que ${a.ramaPrincipal} no tiene`)
+    if (punta && !ahora.startsWith(punta)) return no(`${rama} se ha movido desde que se subió (está en ${ahora.slice(0, 9)}, no en ${punta.slice(0, 9)})`)
   }
   const copia = copias.find(w => w.rama === rama)
   const ruta = copia?.ruta ?? ''
-  if (copia?.principal) return { cerrado: false, rama, ruta, motivo: `${rama} está abierta en la copia principal` }
+  if (copia?.principal) return no(`${rama} está abierta en la copia principal`, ruta)
+  // Sin worktree a la vista, una rama que no está en la principal puede tener su trabajo en un worktree con el HEAD
+  // suelto: no se borra a ciegas.
+  if (!copia && !entera) return no(`${rama} no está entera en ${a.ramaPrincipal} y no encuentro su worktree`)
+  if (copia && !descartar) {
+    const cambios = sinConfirmar(ruta, a.prohibidos)
+    if (cambios.length > 0) {
+      return no(`su worktree tiene ${cambios.length} ${cambios.length === 1 ? 'cambio' : 'cambios'} sin confirmar: ${cambios.slice(0, 4).join(', ')}${cambios.length > 4 ? '…' : ''}`, ruta)
+    }
+  }
   if (copia) {
     const g = gestor ?? gestorDe(a)
     let hecho = g.cerrar({ principal, rama, ruta })
     // Un worktree que Orca no conoce (lo creó git): se quita con git.
     if (!hecho.cerrado && g !== conGit) hecho = conGit.cerrar({ principal, rama, ruta })
-    if (!hecho.cerrado) return { cerrado: false, rama, ruta, motivo: hecho.motivo }
+    if (!hecho.cerrado) return no(hecho.motivo, ruta)
   }
-  // Lo que pueda quedar a medias: el registro del worktree, la rama, su reserva y la copia del encargo.
   git(['worktree', 'prune'], { repo: principal, ok: [0, 1, 128] })
-  git(['branch', entera ? '-d' : '-D', rama], { repo: principal, ok: [0, 1, 128] })
+  // La rama se borra solo si sigue donde estaba al mirarla: un commit hecho entretanto no se pierde.
+  const borrada = entera
+    ? git(['branch', '-d', rama], { repo: principal, ok: [0, 1, 128] })
+    : git(['update-ref', '-d', ref, ahora], { repo: principal, ok: [0, 1, 128] })
+  if (borrada.status !== 0) return no(`el worktree está cerrado, pero la rama no se ha borrado: ${(borrada.stderr || borrada.stdout).trim().slice(0, 200)}`, ruta)
   reservas.quitar(principal, rama)
-  rmSync(join(gitComun(principal), 'equipo', 'encargos', `${rama.split('/').pop()}.md`), { force: true })
+  // La copia del encargo va por el nombre corto: se quita si no queda otra rama que se llame igual.
+  if (!ramasLocales(principal).some(r => cortoDe(r) === cortoDe(rama))) {
+    rmSync(join(gitComun(principal), 'equipo', 'encargos', `${cortoDe(rama)}.md`), { force: true })
+  }
   return { cerrado: true, rama, ruta, motivo: '' }
 }
 
@@ -159,18 +195,18 @@ export function lista({ repo = '.', orca = null } = {}) {
 }
 
 export function main(argv) {
-  const a = argumentos(argv, ['--forzar'], ['--repo', '--encargo'])
+  const a = argumentos(argv, ['--forzar', '--descartar'], ['--repo', '--encargo', '--punta'])
   const [orden, nombre] = a.sueltos
   const repo = a.repo ?? '.'
   try {
     if (orden === 'crear') imprimir(JSON.stringify(crear(nombre, a.encargo, { repo })))
     else if (orden === 'cerrar' && nombre) {
-      const r = cerrar(nombre, { repo, forzar: Boolean(a.forzar) })
+      const r = cerrar(nombre, { repo, forzar: Boolean(a.forzar), punta: a.punta ?? '', descartar: Boolean(a.descartar) })
       imprimir(JSON.stringify(r))
       return r.cerrado ? 0 : 1
     } else if (orden === 'lista') imprimir(JSON.stringify(lista({ repo })))
     else {
-      imprimir('Uso: node worktree.mjs crear <nombre> --encargo <archivo> | cerrar <rama> [--forzar] | lista   [--repo <dir>]')
+      imprimir('Uso: node worktree.mjs crear <nombre> --encargo <archivo> | cerrar <rama> [--forzar [--punta <commit>]] [--descartar] | lista   [--repo <dir>]')
       return 2
     }
     return 0

@@ -2,9 +2,11 @@
 // temporales. Orca se prueba con un `orca` de mentira puesto delante en el PATH.
 
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import * as bloque from '../bloque.mjs'
@@ -144,6 +146,63 @@ describe('worktrees con git a secas', () => {
     assert.deepEqual(reservas.leer(repo), {})
     assert.match(worktree.cerrar('carrito', { repo }).motivo, /no hay ninguna rama «carrito»/)
     assert.match(worktree.cerrar('main', { repo }).motivo, /es la rama principal/)
+  })
+
+  test('cerrar no pierde nada sin pedirlo: cambios sin confirmar, una rama que se ha movido, una rama sin worktree', () => {
+    preparar({ preajuste: 'manual' })
+    // Una rama recién creada está «entera» en main (no lleva commits), pero su agente ya ha escrito algo.
+    const a = worktree.crear('carrito', encargo, { repo })
+    escribir(a.ruta, 'src/nuevo.ts', 'export const nuevo = 1\n')
+    const sucio = worktree.cerrar('carrito', { repo })
+    assert.equal(sucio.cerrado, false)
+    assert.match(sucio.motivo, /su worktree tiene 1 cambio sin confirmar: src\/nuevo\.ts/)
+    assert.equal(leer(a.ruta, 'src/nuevo.ts'), 'export const nuevo = 1\n')
+    assert.equal(worktree.cerrar('carrito', { repo, descartar: true }).cerrado, true)
+
+    // Forzar (squash): solo si la rama sigue en la punta que se subió.
+    const b = worktree.crear('login', encargo, { repo })
+    escribir(b.ruta, 'src/login.ts', 'export const login = 1\n')
+    commit(b.ruta, 'login')
+    const subida = sh(b.ruta, ['rev-parse', 'HEAD']).stdout.trim()
+    escribir(b.ruta, 'src/login.ts', 'export const login = 2\n')
+    commit(b.ruta, 'login, después de avisar')
+    const movida = worktree.cerrar('login', { repo, forzar: true, punta: subida })
+    assert.equal(movida.cerrado, false)
+    assert.match(movida.motivo, /ana\/login se ha movido desde que se subió/)
+    assert.equal(existsSync(b.ruta), true)
+    const punta = sh(b.ruta, ['rev-parse', 'HEAD']).stdout.trim()
+    assert.equal(worktree.cerrar('login', { repo, forzar: true, punta }).cerrado, true)
+    assert.equal(sh(repo, ['branch', '--list', 'ana/login']).stdout.trim(), '')
+
+    // Una rama con commits propios cuyo worktree no se ve (HEAD suelto) no se borra ni a la fuerza.
+    const c = worktree.crear('pagos', encargo, { repo })
+    escribir(c.ruta, 'src/pagos.ts', 'export const pagos = 1\n')
+    commit(c.ruta, 'pagos')
+    sh(c.ruta, ['checkout', '-q', '--detach'])
+    const suelta = worktree.cerrar('pagos', { repo, forzar: true })
+    assert.equal(suelta.cerrado, false)
+    assert.match(suelta.motivo, /no encuentro su worktree/)
+    assert.notEqual(sh(repo, ['branch', '--list', 'ana/pagos']).stdout.trim(), '')
+  })
+
+  test('una etiqueta con el nombre de una rama no confunde: la rama y su reserva siguen ahí', () => {
+    preparar({ preajuste: 'manual' })
+    const r = worktree.crear('carrito', encargo, { repo })
+    sh(repo, ['tag', 'ana/carrito'])
+    assert.deepEqual(reservas.leer(repo), { 'ana/carrito': [11, 20] })
+    assert.equal(worktree.lista({ repo, orca: [] }).find(f => f.nombre === 'carrito').bloque, 'D11-D20')
+    assert.equal(worktree.cerrar('carrito', { repo }).cerrado, true)
+    assert.equal(existsSync(r.ruta), false)
+  })
+
+  test('dos encargos lanzados a la vez se llevan bloques distintos', async () => {
+    preparar({ preajuste: 'manual' })
+    const guion = fileURLToPath(new URL('../worktree.mjs', import.meta.url))
+    const lanzar = nombre =>
+      new Promise(listo => execFile(process.execPath, [guion, 'crear', nombre, '--encargo', encargo, '--repo', repo], (error, stdout) => listo(JSON.parse(stdout.trim().split('\n').pop()))))
+    const [uno, dos] = await Promise.all([lanzar('uno'), lanzar('dos')])
+    assert.deepEqual([uno.bloque, dos.bloque].sort(), ['D11-D20', 'D21-D30'])
+    assert.deepEqual(Object.values(reservas.leer(repo)).sort((x, y) => x[0] - y[0]), [[11, 20], [21, 30]])
   })
 
   test('las reservas: cada rama su bloque, el siguiente las cuenta y la lista las enseña', () => {

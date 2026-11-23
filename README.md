@@ -260,7 +260,8 @@ in `plugin/scripts` print to the terminal (Spanish; agents read it, you do not).
    generated files if any branch touches them, renumber the backlog if you use it, build once, run the tests of what
    they touch once, and call `resultado_lote`.
 7. **`resultado_lote`** notifies each agent. For the ones that are fine it closes the worktree (`worktree.mjs cerrar`:
-   it removes it with Orca or git and deletes the branch); the failing ones get the reason and their branch stays in
+   it removes it with Orca or git and deletes the branch; if the worktree still has uncommitted changes it is left
+   open and the bar says so, so nothing is lost); the failing ones get the reason and their branch stays in
    the bar as "merged, but failing", with **Fix**.
 8. **Fix** (shown when the notice has "To review" items, or when the branch conflicted or failed) asks for an optional
    note and sends it to the agent with what it has to fix. The agent fixes it, goes back to step 3, and its branch
