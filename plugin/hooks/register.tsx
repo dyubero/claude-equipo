@@ -1,4 +1,4 @@
-// Plugin equipo: mods para trabajar con varios agentes en worktrees de Orca.
+// Plugin equipo: mods para trabajar con varios agentes, cada uno en su worktree (con Orca o con git a secas).
 //   contexto — franja con el contexto usado y libre, y el botón «Compactar».
 //   subidas  — en la copia principal, el aviso «La rama X está lista para subir» sale en la franja con «Subir»,
 //              «Solucionar» y «Borrar»; el mod ensaya con git merge-tree, fusiona en cola y pide a Claude una sola
@@ -25,7 +25,7 @@ import { esDibujo } from './dibujo'
 import { fusionEnPrincipal, negativa } from './fusiones'
 import { faltan } from './herramientas'
 import { apuntar, apuntes } from './pendientes'
-import { cuentas, mayorDecision, misma, montarRamas, rutasDeGit, siguienteBloque, textoBloque } from './ramas'
+import { cuentas, misma, montarRamas, rutasDeGit } from './ramas'
 import { revisar } from './revision'
 import { normalizar } from './rutas'
 import { llamadasGit } from './shell'
@@ -144,18 +144,16 @@ export const register: Register = (on, options) => {
     const datos = await cargarRamas($)
     if (datos.error) return { text: `No he podido leer las ramas: ${datos.error}` }
     const nombre = e.args.trim()
-    if (nombre === '') return { text: `Siguiente bloque libre: ${datos.siguiente} (tras la mayor decisión de las copias y de los bloques reservados).` }
+    if (nombre === '') return { text: `Siguiente bloque libre: ${datos.siguiente} (tras la mayor decisión de las ramas y copias y de los bloques reservados).` }
     const rama = datos.ramas.find(r => r.nombre === nombre || r.rama === nombre)
     if (!rama) return { text: `No hay ningún worktree «${nombre}». Siguiente bloque libre: ${datos.siguiente}.` }
-    if (rama.bloque) return { text: `${rama.nombre} ya tiene el bloque ${textoBloque(rama.bloque, a.decisiones.prefijo)}. Siguiente libre: ${datos.siguiente}.` }
+    if (rama.comentario) return { text: `${rama.nombre} ya tiene el bloque ${rama.comentario}. Siguiente libre: ${datos.siguiente}.` }
     if (!(await enPrincipal($))) return { text: `Las reservas se apuntan desde la copia principal. Siguiente bloque libre: ${datos.siguiente}.` }
-    const comentario = rama.comentario ? `${datos.siguiente} · ${rama.comentario}` : datos.siguiente
-    const hecho = await $.process
-      .run(['orca', 'worktree', 'set', '--worktree', `path:${rama.ruta}`, '--comment', comentario], { timeoutMs: 20000 })
-      .catch((error: unknown) => ({ exitCode: 1, stdout: '', stderr: String(error) }))
-    if (hecho.exitCode !== 0) return { text: `No he podido apuntarlo en Orca: ${hecho.stderr.trim().slice(0, 200)}` }
+    // La reserva la apunta el script en el .git común (y en el comentario del worktree si hay Orca).
+    const hecho = (await script($, 'bloque.mjs', ['--reservar', rama.rama, '--json'], 30000)) as { bloque?: string; error?: string } | null
+    if (!hecho?.bloque) return { text: `No he podido reservar el bloque: ${hecho?.error ?? 'bloque.mjs no ha contestado'}` }
     await cargarRamas($)
-    return { text: `Reservado ${datos.siguiente} para ${rama.nombre} (comentario de Orca).` }
+    return { text: `Reservado ${hecho.bloque} para ${rama.nombre}.` }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -301,12 +299,27 @@ const scripts = ($: EngineInterface) => `${$.plugin.root.replace(/\\/g, '/')}/sc
 
 type Salida = { exitCode: number; stdout: string; stderr: string }
 
+/**
+ * `node scripts/<nombre> …` en la raíz de la sesión, y el JSON de su última línea; null si no se ha podido lanzar o no
+ * ha escrito JSON. No mira el código de salida: los scripts dicen en el JSON lo que ha pasado.
+ */
+async function script($: EngineInterface, nombre: string, args: string[], timeoutMs: number): Promise<unknown> {
+  const raiz = await $.session.root()
+  const r = await $.process.run(['node', `${scripts($)}/${nombre}`, ...args], { cwd: raiz, timeoutMs }).catch(() => null)
+  if (!r) return null
+  try {
+    return JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as unknown
+  } catch {
+    return null
+  }
+}
+
 /** Al empezar la sesión: los comandos y, con las subidas, los drivers de fusión y resultado_lote (en la principal). */
 async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<void> {
   await $.command.register({ name: 'ramas', description: 'Panel con los worktrees, su bloque de decisiones y sus agentes (equipo)' })
   await $.command.register({
     name: 'reservar',
-    description: 'Siguiente bloque libre de decisiones; con el nombre de un worktree, se lo apunta en Orca (equipo)',
+    description: 'Siguiente bloque libre de decisiones; con el nombre de un worktree, se lo reserva (equipo)',
     argumentHint: '[worktree]',
   })
   await $.command.register({ name: 'pendiente', description: 'Apunta un pendiente en el documento de pendientes (equipo)', argumentHint: '<texto>' })
@@ -463,21 +476,16 @@ async function cargarRamas($: EngineInterface): Promise<PanelRamas> {
     await update($, panel, () => fallo)
     return fallo
   }
-  const orca = await $.process.run(['orca', 'worktree', 'ps', '--json'], { cwd: raiz, timeoutMs: 20000 }).catch(() => null)
-  const ramas: Rama[] = montarRamas(git.stdout, orca && orca.exitCode === 0 ? orca.stdout : '', a.decisiones.prefijo)
-  const mayores: number[] = []
+  const ramas: Rama[] = montarRamas(git.stdout, await script($, 'worktree.mjs', ['lista'], 30000), a.decisiones.prefijo)
   for (const r of ramas) {
-    if (a.decisiones.activo) {
-      const design = await $.fs.read(`${r.ruta}/${a.decisiones.documento}`).catch(() => null)
-      if (typeof design === 'string') mayores.push(mayorDecision(design, a.decisiones.prefijo))
-    }
     if (r.principal || !r.rama) continue
     const cuenta = await $.process
       .run(['git', 'rev-list', '--left-right', '--count', `${a.ramaPrincipal}...${r.rama}`], { cwd: raiz, timeoutMs: 10000 })
       .catch(() => null)
     if (cuenta && cuenta.exitCode === 0) [r.detras, r.delante] = cuentas(cuenta.stdout)
   }
-  const siguiente = a.decisiones.activo ? textoBloque(siguienteBloque(mayores, ramas, a.decisiones.bloque), a.decisiones.prefijo) : ''
+  const libre = a.decisiones.activo ? ((await script($, 'bloque.mjs', ['--json'], 30000)) as { bloque?: string } | null) : null
+  const siguiente = libre?.bloque ?? ''
   const datos: PanelRamas = { ramas, siguiente, leido: ahora, error: '' }
   await update($, panel, () => datos)
   return datos
@@ -491,8 +499,7 @@ async function revisarFusion($: EngineInterface, rama: string, commit: string, a
   }
   let bloque: [number, number] | null = null
   if (a.decisiones.activo) {
-    const orca = await $.process.run(['orca', 'worktree', 'ps', '--json'], { cwd: raiz, timeoutMs: 20000 }).catch(() => null)
-    const ramas = montarRamas(await git('worktree', 'list', '--porcelain'), orca && orca.exitCode === 0 ? orca.stdout : '', a.decisiones.prefijo)
+    const ramas = montarRamas(await git('worktree', 'list', '--porcelain'), await script($, 'worktree.mjs', ['lista'], 30000), a.decisiones.prefijo)
     bloque = ramas.find(r => r.rama === rama || r.nombre === rama)?.bloque ?? null
   }
   const documentos = [a.decisiones.activo ? a.decisiones.documento : '', a.backlog.activo ? a.backlog.documento : ''].filter(Boolean)
@@ -735,26 +742,17 @@ async function resultado($: EngineInterface, nombre: string, ok: boolean, motivo
   const enviado = await avisar($, sesion, textoSubida(rama, fusion, principal))
   const avisado = enviado ? ', agente avisado' : `, sin avisar al agente${sinSesion}`
   const ruta = copias.find(w => w.rama === rama)?.ruta ?? ''
-  if (ruta === '' || misma(ruta, raiz)) {
-    if (subida) await borrar($, rama)
-    await git('branch', '-d', rama)
-    return `${rama}: comprobada${avisado}; no tenía worktree abierto.${aviso}`
-  }
-  // --force: lo que haya quedado sin confirmar en el worktree (dependencias, compilados) ya no hace falta: la rama está
-  // entera en la principal.
-  const rm = await $.process
-    .run(['orca', 'worktree', 'rm', '--worktree', `branch:${rama}`, '--force', '--json'], { cwd: raiz, timeoutMs: 120000 })
-    .catch((error: unknown) => ({ exitCode: 1, stdout: '', stderr: String(error) }))
-  if (rm.exitCode !== 0) {
-    const porque = (rm.stderr || rm.stdout).trim().slice(0, 200)
+  const abierto = ruta !== '' && !misma(ruta, raiz)
+  // worktree.mjs quita el worktree (con Orca o con git; lo que quede sin confirmar allí ya no hace falta: la rama está
+  // entera en la principal), el registro que pueda quedar en git, la rama y su reserva de bloque.
+  const cierre = (await script($, 'worktree.mjs', ['cerrar', rama], 180000)) as { cerrado?: boolean; motivo?: string } | null
+  if (!cierre?.cerrado) {
+    const porque = (cierre?.motivo ?? 'worktree.mjs no ha contestado').slice(0, 200)
     if (subida) await poner($, rama, { estado: 'fusionada', detalle: `comprobada; no he podido cerrar el worktree: ${porque}` })
     return `${rama}: comprobada${avisado}; el worktree no se ha podido cerrar (${porque}).${aviso}`
   }
-  // Lo que Orca pueda dejar a medias: el registro del worktree en git y la rama (ya en la principal).
-  await git('worktree', 'prune')
-  await git('branch', '-d', rama)
   if (subida) await borrar($, rama)
-  return `${rama}: comprobada${avisado} y worktree cerrado.${aviso}`
+  return abierto ? `${rama}: comprobada${avisado} y worktree cerrado.${aviso}` : `${rama}: comprobada${avisado}; no tenía worktree abierto.${aviso}`
 }
 
 async function mandarSolucion($: EngineInterface, rama: string, nota: string): Promise<void> {

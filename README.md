@@ -1,7 +1,7 @@
 # claude-equipo
 
 > **English summary.** A [Claude Code](https://code.claude.com) plugin for running **several agents at once, each in
-> its own Orca worktree**, and merging their branches into the main branch without stepping on each other: a dry run
+> its own worktree** (with Orca or plain `git worktree`), and merging their branches into the main branch without stepping on each other: a dry run
 > with `git merge-tree`, a merge queue ordered by fewest conflicts, one check per batch, merge drivers for append-only
 > docs and generated files, and git guards that stop agents from merging on their own. It works with any stack:
 > after installing, ask your agent to **adapt it to your project** (skill `adapt-to-project`) — it inspects how the
@@ -16,7 +16,7 @@
 > texts are currently in Spanish. The documentation below is in Spanish.
 
 Un plugin de [Claude Code](https://code.claude.com) para trabajar con **varios agentes a la vez, cada uno en su
-worktree de Orca**, y subir sus ramas a la rama principal sin pisarse: tú hablas con
+worktree** (con Orca o con `git worktree` a secas), y subir sus ramas a la rama principal sin pisarse: tú hablas con
 una sesión en la copia principal, ella lanza cada encargo a un worktree nuevo con su agente, y cuando un agente acaba,
 su rama sale en una franja sobre el prompt con un botón **Subir**.
 
@@ -63,13 +63,13 @@ escribas los ajustes sin preguntar al usuario lo que no se deduce del proyecto.
 | **Ensayo** | copia principal | Al llegar cada aviso y al pulsar «Subir», ensaya la subida con `git merge-tree`, sin tocar nada: la franja dice «⚠ chocaría con X: archivos» antes de pulsar, y al subir entra primero lo que menos choca. |
 | **Drivers de fusión** | todas las copias | Los documentos donde dos ramas suelen añadir al final (un CHANGELOG, el documento de diseño, el backlog) se unen solos si los dos lados solo añaden; los archivos generados (`package-lock.json`) se quedan como estaban y se rehacen después. |
 | **`resultado_lote`** | copia principal | Una herramienta que Claude llama tras comprobar el lote: a las ramas que están bien les avisa y les cierra el worktree; a las que fallan les manda el motivo. |
-| **`/ramas`** | todas | Un panel con cada worktree: su comentario de Orca, cuánto lleva que la principal no tiene y al revés, y el estado de su agente. |
-| **`/reservar`** | principal | Solo con decisiones numeradas: el siguiente bloque libre; con el nombre de un worktree, se lo apunta en su comentario de Orca. |
+| **`/ramas`** | todas | Un panel con cada worktree: su bloque de decisiones reservado, cuánto lleva que la principal no tiene y al revés, y, con Orca, el estado de su agente. |
+| **`/reservar`** | principal | Solo con decisiones numeradas: el siguiente bloque libre; con el nombre de un worktree, se lo reserva (en el `.git` común; con Orca, además en el comentario del worktree). |
 | **`/pendiente`** | todas | `/pendiente <texto>` lo apunta, con fecha y rama, en «Apuntes rápidos» del documento de pendientes. Sin texto, lista lo apuntado. |
 | **Freno a las fusiones** | worktrees | Una orden que fusiona en la copia principal desde un worktree (`git -C <principal> merge …`, `cd <principal> && git merge …`, `pull`) se niega, explicando al agente cómo avisar. |
 | **Guarda de los commits** | todas | En la copia principal niega `git add -A`, `git add .`, `git add -u`, `git commit -a` / `--all` y `git commit .`. En cualquier copia niega que entren los `prohibidos` de los ajustes (por ejemplo `.env.local` o `dist/`). |
 | **Skill `adapt-to-project`** | principal | Adapta el plugin a tu proyecto: lo estudia, te pregunta lo dudoso, escribe `.claude/equipo.json`, prueba los comandos, instala los drivers y añade el flujo a tu CLAUDE.md. Si la copia principal no tiene ajustes, el plugin te lo recuerda al empezar la sesión. |
-| **Skill `encargo`** | principal | Lanza un encargo: nombre de la rama, bloque de decisiones si se usan, `orca worktree create` con el texto del usuario tal cual y la fila en el documento de pendientes. |
+| **Skill `encargo`** | principal | Lanza un encargo: nombre de la rama, worktree nuevo (con Orca o con git), bloque de decisiones si se usan, el texto del usuario tal cual en un archivo que lee el agente, su sesión abierta y la fila en el documento de pendientes. |
 | **Skill `lista-para-subir`** | worktree | Commit, traer la principal, repetir solo las pruebas que se cruzan y el aviso a la sesión principal con el formato exacto que lee la franja. |
 | **Skill `comprobar-lote`** | principal | Lo que hace Claude cuando la franja le pide comprobar un lote: rehacer lo generado, renumerar el backlog, una sola tanda de pruebas y `resultado_lote`. |
 | **Skill `estado-ramas`** | principal | Cómo va cada worktree (en marcha, esperando al usuario, a media fusión, al día para subir) y con qué chocaría si se subiera ahora. |
@@ -83,8 +83,9 @@ su idioma.
   puede cambiar entre versiones).
 - **Node 22** o posterior en el `PATH`: los scripts y el driver de fusión son `.mjs` sin dependencias.
 - **git 2.38** o posterior (`git merge-tree --write-tree`).
-- **Orca**, con la CLI `orca` en el `PATH`, para los worktrees y sus agentes. Sin Orca funcionan la franja del contexto,
-  las guardas, las subidas y `/ramas` (sin comentarios ni estado de agentes), pero no `encargo` ni el cierre de worktrees.
+- **Orca es opcional.** Con la CLI `orca` en el `PATH`, los worktrees y sus agentes los lleva Orca, como siempre. Sin
+  Orca, el plugin crea y cierra los worktrees con `git worktree` y abre la sesión de cada agente con un *lanzador*
+  (ver «Sin Orca»). Lo único que se pierde es el estado de los agentes en `/ramas` y en `estado-ramas`.
 
 Funciona en Windows, macOS y Linux. Se usa a diario en Windows; en macOS y Linux lo que se comprueba con cada cambio
 son las pruebas de los scripts (repositorios de git de verdad), que pasan en los tres sistemas en GitHub Actions. Las
@@ -92,6 +93,37 @@ rutas se comparan sin mayúsculas solo donde el sistema de archivos no las disti
 
 Al empezar la sesión, el plugin avisa si no encuentra `node` o si `git` es anterior a 2.38. Con `nvm` u otro gestor de
 versiones, `node` tiene que estar en el `PATH` de la terminal desde la que se abre Claude Code.
+
+## Sin Orca: worktrees de git y lanzadores
+
+Git sabe crear worktrees, pero no abrir terminales. Por eso, sin Orca, tras crear el worktree el plugin ejecuta un
+*lanzador*: una orden que abre una pestaña o una ventana con `claude` en esa carpeta. Con `lanzar.preajuste` en
+`"auto"` (lo de por defecto) se elige según la máquina:
+
+| Preajuste | Cuándo se elige con `auto` | Qué hace |
+|---|---|---|
+| `tmux` | la sesión corre dentro de tmux | `tmux new-window` en la carpeta del worktree |
+| `wt` | Windows, con Windows Terminal en el `PATH` | una pestaña nueva de Windows Terminal |
+| `iterm` | macOS, desde iTerm2 | una ventana nueva de iTerm2 |
+| `terminal` | macOS, desde cualquier otra terminal | una ventana nueva de Terminal.app |
+| `manual` | no hay nada de lo anterior | no abre nada: Claude te da la orden para pegarla en una terminal nueva |
+| `propio` | nunca: se pone a mano | la orden de `lanzar.orden`, con `{ruta}`, `{nombre}` y `{prompt}` |
+
+Si un lanzador falla, el worktree queda creado y Claude te da la orden para abrir la sesión a mano. Con `propio`
+puedes enchufar cualquier otra terminal, por ejemplo kitty:
+
+```json
+"lanzar": { "preajuste": "propio", "orden": ["kitty", "@", "launch", "--type=tab", "--cwd", "{ruta}", "claude", "{prompt}"] }
+```
+
+**Qué está probado y qué no.** `manual`, `propio` y la creación y el cierre de worktrees con git se prueban de punta a
+punta en Windows, macOS y Linux con cada cambio. Los preajustes `tmux`, `wt`, `terminal` e `iterm` solo tienen probado
+que la orden se monta bien: no se han ejecutado todavía contra esas terminales de verdad. Si alguno no te abre la
+sesión, el plugin cae en `manual` y te lo dice; cuéntalo en un issue.
+
+El encargo no viaja en la línea de órdenes. Se escribe en `.claude/equipo-encargo.md` dentro del worktree (git lo
+ignora por `<.git>/info/exclude`, así que nunca entra en un commit), y el agente arranca con una frase que le dice que
+lo lea. Por eso el texto del encargo puede llevar comillas o cualquier otro carácter.
 
 ## Instalar
 
@@ -144,6 +176,10 @@ copia.
 | `backlog.activo` | `false` | Backlog con códigos en la primera celda de cada fila (`\| T12 \| … \|`): en las ramas se apuntan con el nombre de la rama delante (`carrito-T1`) y la principal los renumera al subir. |
 | `backlog.documento` | `"BACKLOG.md"` | El backlog. |
 | `pendientes` | `"docs/pendientes.md"` | Donde `/pendiente`, `encargo` y `comprobar-lote` apuntan lo que está en marcha y lo que queda sin probar. |
+| `worktrees.gestor` | `"auto"` | Quién crea y cierra los worktrees: `"orca"`, `"git"` o `"auto"` (Orca si está en el `PATH`, si no git). |
+| `worktrees.carpeta` | `"../{repo}-worktrees/{nombre}"` | Con git: carpeta de cada worktree, desde la copia principal. |
+| `worktrees.prefijoRama` | `""` | Con git: lo que va delante del nombre del encargo en la rama (`"ana/"` da `ana/carrito`). |
+| `lanzar.preajuste` / `lanzar.orden` | `"auto"` / `[]` | Con git: cómo se abre la sesión del agente (ver «Sin Orca»). |
 | `orca.repo` | `""` | Nombre del repositorio en Orca; vacío, el de la carpeta de la copia principal. |
 | `sesionPrincipal` | `""` | Cómo empieza el nombre de la sesión de la copia principal en `ListAgents`; vacío, el de su carpeta (con `_` → `-`). |
 
@@ -153,9 +189,9 @@ Los interruptores de cada pieza están en `/config`, en las filas del plugin `eq
 ## El flujo, de un encargo a la subida
 
 1. **Pides algo en la sesión de la copia principal.** Claude sigue la skill `encargo`: elige un nombre corto
-   (`carrito-pago`), reserva un bloque de decisiones si las usas y lanza
-   `orca worktree create … --agent claude --prompt "<tu encargo tal cual>"`. Desde ahí hablas con ese agente, en su
-   worktree. Puedes lanzar varios a la vez.
+   (`carrito-pago`), escribe tu encargo tal cual en un archivo y lanza `node <plugin>/scripts/worktree.mjs crear`,
+   que crea el worktree (con Orca o con git), reserva un bloque de decisiones si las usas y abre la sesión del
+   agente. Desde ahí hablas con ese agente, en su worktree. Puedes lanzar varios a la vez.
 2. **El agente trabaja en su rama.** Si intenta fusionar en la principal, la guarda se lo niega y le dice cómo avisar.
 3. **Cuando acaba, sigue `lista-para-subir`:** commit, `git merge main`, compila, repite solo las pruebas que se cruzan
    con lo que ha traído main y manda a la sesión principal:
@@ -179,8 +215,8 @@ Los interruptores de cada pieza están en `/config`, en las filas del plugin `eq
 6. **Con la cola vacía, el mod pide a Claude una sola comprobación del lote** (skill `comprobar-lote`): rehacer lo
    generado si alguna lo toca, renumerar el backlog si lo usas, compilar una vez, las pruebas de lo que tocan una vez, y
    llamar a `resultado_lote`.
-7. **`resultado_lote`** avisa a cada agente. A los que están bien les cierra el worktree (`orca worktree rm --force`,
-   `git worktree prune`, `git branch -d`); a los que fallan les manda el motivo y su rama queda en la franja como
+7. **`resultado_lote`** avisa a cada agente. A los que están bien les cierra el worktree (`worktree.mjs cerrar`: lo
+   quita con Orca o con git y borra la rama); a los que fallan les manda el motivo y su rama queda en la franja como
    «dentro, pero falla», con **Solucionar**.
 8. **Solucionar** (sale si el aviso trae «Por revisar», o si la rama ha chocado o fallado) pide una indicación opcional
    y se la manda al agente con lo que tiene que arreglar. El agente arregla, vuelve al paso 3 y su rama vuelve a la
@@ -199,9 +235,14 @@ En cualquier momento, `estado-ramas` («¿cómo van las ramas?») dice en qué e
 
   Se ponen al día al empezar cada sesión con las subidas activas. Para quitarlos:
   `node <plugin>/scripts/fusion.mjs desinstalar`.
+- En el `.git` común, además: `equipo/reservas.json` (los bloques de decisiones reservados por rama),
+  `equipo/encargos/` (una copia de cada encargo en marcha) y una línea en `info/exclude` para que git ignore
+  `.claude/equipo-encargo.md` en los worktrees.
+- Sin Orca, la carpeta de los worktrees: por defecto `../<repositorio>-worktrees/`, al lado de la copia principal.
 - El documento de `pendientes`, que las skills y `/pendiente` escriben (y la principal confirma solo).
 - Lo que ejecuta el mod: `git` (worktree list, rev-list, merge, merge-tree, commit-tree, status, diff, show,
-  branch -d), `orca worktree ps|set|rm` y `node <plugin>/scripts/*.mjs`. Manda mensajes a los agentes con
+  branch -d) y `node <plugin>/scripts/*.mjs`, que a su vez llaman a `git worktree add|remove`, a
+  `orca worktree create|ps|set|rm` si hay Orca y al lanzador. Manda mensajes a los agentes con
   `SendMessage` y pide a Claude la comprobación del lote con un prompt.
 
 ## Cómo se prueba

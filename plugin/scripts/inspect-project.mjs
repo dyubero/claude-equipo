@@ -19,6 +19,7 @@ import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { AJUSTES, argumentos, git, imprimir, POR_DEFECTO, raiz } from './comun.mjs'
+import { detectar } from './lanzadores.mjs'
 
 // ---------------------------------------------------------------- reading helpers
 
@@ -567,6 +568,8 @@ export function inspect(repo = '.') {
 
   facts.instructions = ['CLAUDE.md', '.claude/CLAUDE.md', 'AGENTS.md', 'CLAUDE.local.md'].filter(f => existsSync(join(root, f)))
   facts.tools = { node: process.version, git: toolVersion('git'), orca: toolVersion('orca') }
+  // Without Orca, worktrees are plain git ones and the agent's session is opened by a launcher.
+  facts.worktrees = { manager: facts.tools.orca ? 'orca' : 'git', launcher: detectar() }
   // Task runners only matter if the project has their file; a Makefile is no use on a machine without make.
   for (const [file, tool] of [['Makefile', 'make'], ['makefile', 'make'], ['GNUmakefile', 'make'], ['justfile', 'just'], ['Justfile', 'just'], ['Taskfile.yml', 'task']]) {
     if (file in facts.tasks && !(tool in facts.tools)) facts.tools[tool] = toolVersion(tool)
@@ -661,7 +664,9 @@ export function propose(f) {
   if (f.documents.changelog.length > 0) proposal.unir = f.documents.changelog
   if (f.documents.todo.length > 0 && !backlog) ask(`Is ${f.documents.todo[0]} where pending work gets written down, or use a new ${POR_DEFECTO.pendientes}?`)
 
-  if (!f.tools.orca) ask('Orca is not in PATH: without it there are no task worktrees and branches cannot be closed. Is it installed?')
+  if (f.worktrees.manager === 'git' && f.worktrees.launcher === 'manual') {
+    ask('Orca is not installed and no terminal that can open tabs on its own was detected (tmux, Windows Terminal, Terminal.app, iTerm): each task will give the user a command to paste in a new terminal. Is that fine, or is there a command that opens a new tab or window (lanzar.preajuste "propio")?')
+  }
   ask(f.instructions.length > 0 ? `Add the parallel-work section to ${f.instructions[0]}?` : 'Create a CLAUDE.md with the parallel-work section?')
   return { proposal, questions }
 }
@@ -687,6 +692,7 @@ function summary({ facts: f, proposal, questions }) {
   l.push(`Commits in ${f.commits.language || '?'}${f.commits.style ? ` (${f.commits.style})` : ''}: ${f.commits.examples.map(s => `"${s}"`).join(' ')}`)
   l.push(`Agent instructions: ${f.instructions.join(', ') || 'none'}`)
   l.push(`Tools: node ${f.tools.node}, ${f.tools.git || 'no git'}, ${f.tools.orca ? `orca ${f.tools.orca}` : 'no orca'}`)
+  l.push(`Task worktrees: ${f.worktrees.manager === 'orca' ? 'created and opened by Orca' : `plain git worktrees; sessions opened with the "${f.worktrees.launcher}" launcher`}`)
   l.push('', `Proposed ${AJUSTES}:`, JSON.stringify(proposal, null, 2), '', 'Questions (ask the user, in their language, only those the project does not answer):')
   for (const q of questions) l.push(`- ${q}`)
   return l.join('\n')

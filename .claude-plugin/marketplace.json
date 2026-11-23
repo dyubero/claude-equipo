@@ -1,7 +1,7 @@
 {
   "name": "claude-equipo",
   "owner": { "name": "dyubero" },
-  "metadata": { "description": "Trabajo en paralelo con agentes de Claude Code en worktrees de Orca" },
+  "metadata": { "description": "Trabajo en paralelo con agentes de Claude Code, cada uno en su worktree (con Orca o con git a secas)" },
   "plugins": [
     {
       "name": "equipo",

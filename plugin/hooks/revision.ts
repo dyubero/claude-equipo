@@ -8,7 +8,7 @@ import { codigosSinRenumerar } from './subidas'
 
 export type Entrada = {
   rama: string
-  /** El bloque reservado a la rama (comentario de Orca), si se sabe. */
+  /** El bloque reservado a la rama, si se sabe. */
   bloque: [number, number] | null
   /** `git rev-list --parents -n 1 <commit>`: el commit y sus padres. */
   padres: string

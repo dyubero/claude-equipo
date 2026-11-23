@@ -12,14 +12,15 @@ sentence «La rama X está lista para subir» and the button labels (Subir, Solu
 by that exact sentence and draws the buttons itself. A short gloss in the team's language next to them is fine.
 -->
 
-## Parallel work (Orca worktrees and the equipo plugin)
+## Parallel work (one worktree per task, with the equipo plugin)
 
-Each task runs on its own branch, in its own Orca worktree, with its own agent; several can run at once. Check where
+Each task runs on its own branch, in its own worktree, with its own agent; several can run at once. Check where
 you are: in the main copy `.git` is a folder, in a worktree it is a file. The workflow settings are in
 `.claude/equipo.json`.
 
 **In the main copy (`<main branch>`): do not implement tasks here.**
-- For each thing the user asks for, launch a worktree with the `encargo` skill; the user then talks to that agent.
+- For each thing the user asks for, launch a worktree with the `encargo` skill (never `git worktree add` or
+  `orca worktree create` by hand); the user then talks to that agent.
 - This session launches tasks, merges what agents finish, and handles general questions, status and documents.
 - When an agent finishes, its notice "La rama X está lista para subir" shows up above the prompt with a **Subir**
   button. Pressing it is the user's decision: never merge a branch yourself unless the user asks.

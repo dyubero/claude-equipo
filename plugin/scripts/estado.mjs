@@ -2,7 +2,7 @@
 //
 //   node estado.mjs [--json] [--sin-ensayo] [--repo <dir>] [--base <rama>]
 //
-// Para cada worktree: su bloque (comentario de Orca), el estado de su agente, commits por delante y por detrás de la
+// Para cada worktree: su bloque de decisiones reservado, el estado de su agente (si hay Orca), commits por delante y por detrás de la
 // rama principal, cambios sin confirmar y en qué punto está:
 // - «a media fusión»: tiene un `git merge` sin acabar (MERGE_HEAD), normalmente al traer la principal con choques;
 // - «en marcha»: su agente está trabajando;
@@ -15,8 +15,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ajustes, argumentos, corto, git, imprimir, misma, orcaWorktrees, worktrees } from './comun.mjs'
+import { ajustes, argumentos, corto, git, imprimir } from './comun.mjs'
 import * as ensayo from './ensayo.mjs'
+import { lista } from './worktree.mjs'
 
 export const FASES = ['a media fusión', 'esperando al usuario', 'al día, para subir', 'en marcha', 'todo en la principal']
 
@@ -40,18 +41,16 @@ export function fase(fila) {
 export function estado(repo = '.', { base, ensayar = true, orca = null } = {}) {
   const a = ajustes(repo)
   const principal = base ?? a.ramaPrincipal
-  const deOrca = orca ?? orcaWorktrees(repo)
   const filas = []
-  for (const w of worktrees(repo)) {
+  for (const w of lista({ repo, orca })) {
     if (w.principal || !w.rama) continue
-    const o = deOrca.find(x => misma(x.path ?? '', w.ruta)) ?? {}
     const [detras, delante] = git(['rev-list', '--left-right', '--count', `${principal}...${w.rama}`], { repo }).stdout.trim().split(/\s+/).map(Number)
     const fila = {
-      nombre: o.displayName || w.ruta.replace(/\\/g, '/').split('/').pop(),
+      nombre: w.nombre,
       rama: w.rama,
       ruta: w.ruta,
-      bloque: o.comment ?? '',
-      agente: (o.agents ?? []).map(x => x.state ?? '?').join(', ') || 'sin agente',
+      bloque: w.bloque,
+      agente: w.agente || 'sin agente',
       delante,
       detras,
       mediaFusion: git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { repo: w.ruta, ok: [0, 1, 128] }).status === 0,

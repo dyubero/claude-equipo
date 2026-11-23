@@ -17,10 +17,10 @@ export type Rama = {
   nombre: string
   rama: string
   ruta: string
-  /** Comentario de Orca (el bloque de decisiones reservado, si se usan). */
+  /** El bloque de decisiones reservado para la rama («D15-D24»), si se usan. */
   comentario: string
   bloque: [number, number] | null
-  /** Estado de sus agentes en Orca (working, done…), separados por comas. */
+  /** Estado de sus agentes según Orca (working, done…), separados por comas; '' sin Orca. */
   agente: string
   principal: boolean
   /** Última actividad según Orca (ms). */

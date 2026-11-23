@@ -3,7 +3,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 import { mezclar, POR_DEFECTO } from './por-defecto.mjs'
 
@@ -22,6 +22,24 @@ export function git(args, { repo = '.', ok = [0], entrada, env } = {}) {
   if (r.error) throw new GitError(`git ${args.join(' ')}: ${r.error.message}`)
   if (!ok.includes(r.status)) throw new GitError(`git ${args.join(' ')}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`)
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' }
+}
+
+/**
+ * Ejecuta un programa que no es git (orca, un lanzador…) sin shell. En Windows sí pasa por la shell, que es la que
+ * encuentra los `.cmd`, con cada argumento entre comillas.
+ */
+export function ejecutar(argv, { cwd = '.', timeout = 30000, env } = {}) {
+  const [programa, ...args] = argv.map(String)
+  const opciones = { cwd, encoding: 'utf8', timeout, windowsHide: true, env: env ?? process.env }
+  if (process.platform !== 'win32') return spawnSync(programa, args, opciones)
+  const cita = a => `"${a.replace(/"/g, '\\"')}"`
+  return spawnSync([programa, ...args.map(cita)].join(' '), { ...opciones, shell: true })
+}
+
+/** El directorio .git común a la copia principal y a todos sus worktrees. */
+export function gitComun(repo = '.') {
+  const dicho = git(['rev-parse', '--git-common-dir'], { repo }).stdout.trim()
+  return isAbsolute(dicho) ? dicho : resolve(repo, dicho)
 }
 
 /** «usuario/mi-rama» → «mi-rama»: el nombre del worktree y el prefijo de los códigos del backlog. */
@@ -47,7 +65,7 @@ export function worktrees(repo = '.') {
 
 /** Los worktrees de Orca (`orca worktree ps --json`), o [] si Orca no está. */
 export function orcaWorktrees(repo = '.') {
-  const r = spawnSync('orca', ['worktree', 'ps', '--json'], { cwd: repo, encoding: 'utf8', timeout: 30000, shell: process.platform === 'win32', windowsHide: true })
+  const r = ejecutar(['orca', 'worktree', 'ps', '--json'], { cwd: repo, timeout: 30000 })
   if (r.error || r.status !== 0) return []
   try {
     return JSON.parse(r.stdout)?.result?.worktrees ?? []

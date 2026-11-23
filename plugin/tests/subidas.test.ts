@@ -39,7 +39,8 @@ const LISTA_LOGIN = [
 ].join('\n')
 
 const PORCELANA = `worktree ${PRINCIPAL}\nHEAD 1\nbranch refs/heads/main\n\nworktree ${CARRITO}\nHEAD 2\nbranch refs/heads/carrito\n`
-const ORCA = JSON.stringify({ ok: true, result: { worktrees: [{ path: CARRITO, displayName: 'carrito', comment: 'D31-D40' }] } })
+// Lo que contesta `node scripts/worktree.mjs lista`.
+const LISTA = JSON.stringify([{ ruta: CARRITO, rama: 'carrito', principal: false, nombre: 'carrito', bloque: 'D31-D40', agente: '', actividad: 0 }])
 const CON_BACKLOG = JSON.stringify({ backlog: { activo: true }, decisiones: { activo: true }, comandos: { regenerar: 'npm install' } })
 
 type Escena = {
@@ -96,13 +97,14 @@ function preparar(on: On, escena: Escena = {}) {
     if (argv[0] === 'node' && escena.sinNode) return { deny: 'spawn node ENOENT' }
     if (argv[0] === 'git' && argv[1] === '--version') return sale(0, escena.git ?? 'git version 2.52.0\n')
     if (argv[0] === 'node' && (argv[1] ?? '').endsWith('/scripts/ensayo.mjs')) return escena.plan ? sale(0, JSON.stringify(escena.plan)) : sale(1, '', 'sin ensayo')
+    if (argv[0] === 'node' && (argv[1] ?? '').endsWith('/scripts/worktree.mjs')) {
+      return argv[2] === 'lista' ? sale(0, LISTA) : sale(0, JSON.stringify({ cerrado: true, rama: argv[3], ruta: CARRITO, motivo: '' }))
+    }
     if (argv[0] === 'node') return sale(0, 'drivers ya al día')
     if (argv[1] === 'merge-base' && argv[2] === '--is-ancestor') {
       return sale(escena.fusionadas === undefined || escena.fusionadas.includes((argv[3] as string).replace('refs/heads/', '')) ? 0 : 1)
     }
     if (argv[1] === 'show' && argv[2] === 'HEAD:BACKLOG.md') return sale(0, '| T1 | a |\n| pagos-T2 | sin renumerar |\n')
-    if (argv[0] === 'orca' && argv[2] === 'ps') return sale(0, ORCA)
-    if (argv[0] === 'orca') return sale(0, '{"ok":true}')
     if (argv.includes('worktree')) return sale(0, PORCELANA)
     if (argv[1] === 'symbolic-ref') return sale(0, 'main\n')
     if (argv[1] === 'rev-parse' && argv.includes('MERGE_HEAD')) {
@@ -337,11 +339,10 @@ test('el resultado del lote cierra el worktree de las que están bien y avisa a 
   const texto = JSON.stringify(respuesta)
   expect(texto).toMatch(/carrito: comprobada, agente avisado y worktree cerrado/)
   expect(texto).toMatch(/login: marcada como fallida; agente avisado/)
-  expect(r.ordenes).toContainEqual(['orca', 'worktree', 'rm', '--worktree', 'branch:carrito', '--force', '--json'])
-  const despues = r.ordenes.slice(r.ordenes.findIndex(o => o[2] === 'rm'))
-  expect(despues).toContainEqual(['git', 'worktree', 'prune'])
-  expect(despues).toContainEqual(['git', 'branch', '-d', 'carrito'])
-  expect(r.ordenes.some(o => o[0] === 'orca' && o.includes('branch:login'))).toBe(false)
+  // El cierre (worktree, rama y reserva) lo hace worktree.mjs, con Orca o con git.
+  const cierres = r.ordenes.filter(o => o[0] === 'node' && o[2] === 'cerrar')
+  expect(cierres.map(o => o[3])).toEqual(['carrito'])
+  expect(cierres[0]?.[1]).toMatch(/\/scripts\/worktree\.mjs$/)
   expect(r.enviados.find(m => m.to === 'carrito-e4')?.text).toMatch(/está subida a main/)
   expect(r.enviados.find(m => m.to === 'login-87')?.text).toMatch(/enlace mágico falla/)
   expect(await ui.find({ key: 'subir-carrito' })).toBeUndefined()
@@ -364,7 +365,7 @@ test('resultado_lote acepta el nombre corto y una rama fusionada a mano que no e
   await recibir($, LISTA_ESTILOS)
   texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'estilos', ok: true }] } as never))
   expect(texto).toMatch(/estilos: no está entera en main/)
-  expect(r.ordenes.some(o => o[0] === 'orca' && o.includes('branch:estilos'))).toBe(false)
+  expect(r.ordenes.some(o => o[2] === 'cerrar' && o[3] === 'estilos')).toBe(false)
 })
 
 test('resultado_lote avisa si quedan códigos de la rama sin renumerar', NO_CONTEXTO, async ($, on) => {

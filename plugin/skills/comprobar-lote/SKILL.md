@@ -1,6 +1,6 @@
 ---
 name: comprobar-lote
-description: Use when, in the main copy of a repository that works with Orca worktrees, the equipo plugin asks to check a batch of branches just merged into the main branch, when a branch was merged by hand and needs checking, or when typing /comprobar-lote.
+description: Use when, in the main copy of a repository that works with the equipo plugin (one worktree per task), the equipo plugin asks to check a batch of branches just merged into the main branch, when a branch was merged by hand and needs checking, or when typing /comprobar-lote.
 ---
 
 # /comprobar-lote — comprobar en la principal lo que acaba de subir

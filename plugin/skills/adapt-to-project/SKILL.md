@@ -1,11 +1,11 @@
 ---
 name: adapt-to-project
-description: Adapts the equipo plugin (parallel agents in Orca worktrees, merges from the main copy, git guards) to the current project - inspects how it builds, tests and documents, asks the user only what cannot be deduced, then writes .claude/equipo.json, verifies the commands, installs the merge drivers and documents the workflow in CLAUDE.md. Use it right after installing the equipo plugin, whenever a project has no .claude/equipo.json, when the plugin reminds the user that the project is not set up, or when the user asks - in any language - to set up, configure, adapt, tune or fix the equipo plugin, the worktree workflow, or the build/test commands the plugin runs (e.g. "adapt the plugin to this project", "prepara el plugin equipo", "configure le plugin pour ce dépôt").
+description: Adapts the equipo plugin (parallel agents, each in its own worktree - with Orca or plain git -, merges from the main copy, git guards) to the current project - inspects how it builds, tests and documents, asks the user only what cannot be deduced, then writes .claude/equipo.json, verifies the commands, installs the merge drivers and documents the workflow in CLAUDE.md. Use it right after installing the equipo plugin, whenever a project has no .claude/equipo.json, when the plugin reminds the user that the project is not set up, or when the user asks - in any language - to set up, configure, adapt, tune or fix the equipo plugin, the worktree workflow, or the build/test commands the plugin runs (e.g. "adapt the plugin to this project", "prepara el plugin equipo", "configure le plugin pour ce dépôt").
 ---
 
 # Adapt the equipo plugin to this project
 
-The equipo plugin brings a ready-made workflow: each task goes to its own Orca worktree with its own agent, finished
+The equipo plugin brings a ready-made workflow: each task goes to its own worktree with its own agent, finished
 branches are merged from the main copy with a dry run first, one check per batch, and git guards that keep agents from
 merging on their own. What changes from project to project — how it compiles, which tests run, which files are
 generated or must never be committed, how decisions and pending work are written down — lives in
@@ -49,6 +49,8 @@ Run `node <scripts>/inspect-project.mjs` (add `--json` if you prefer to parse it
 - tracked files that look generated; documents that look like numbered decisions, a coded backlog or a changelog;
 - sensitive files and build folders that git does not ignore;
 - the language and style of the commits, existing agent instructions (CLAUDE.md, AGENTS.md), and tool versions;
+- who will create the worktrees (Orca if it is installed, plain `git worktree` otherwise) and, without Orca, how a new
+  agent session can be opened on this machine (the launcher: tmux, Windows Terminal, Terminal.app, iTerm, or by hand);
 - a **proposed** `.claude/equipo.json` (only what differs from the defaults) and a list of **open questions**.
 
 The script is a starting point, not the answer. Read what it cannot: the README and contributing guide, the CI
@@ -108,7 +110,12 @@ The usual open points, roughly in order of how much they matter:
    branch gets its own block of numbers and codes are renumbered on merge. Pure overhead otherwise: recommend them only
    if the project already works that way or the user wants it.
 5. **Language** of commits and documents, if the commits do not make it clear.
-6. **The CLAUDE.md section** (step 6). Recommend yes: without it the agent in the main copy does not know it must not
+6. **Without Orca: where task worktrees go and how their sessions open.** The defaults (a sibling folder
+   `<repo>-worktrees/`, branch named like the task, launcher detected on each machine) suit most projects, so only
+   ask if the user has a convention (a branch prefix such as `ana/`, a fixed folder) or the detected launcher is
+   `manual` and they would rather have tabs open on their own. `lanzar` depends on the machine, not on the project:
+   leave it on `auto` in the committed file unless the whole team uses the same terminal.
+7. **The CLAUDE.md section** (step 6). Recommend yes: without it the agent in the main copy does not know it must not
    implement tasks there, and worktree agents do not know how to hand their work back.
 
 Do not ask about things the user cannot reasonably know or care about (driver internals, regex patterns). Decide those
@@ -161,8 +168,9 @@ Tell the user, briefly and in their language:
 
 - what is in the settings and why — what was deduced and what they chose;
 - which commands you ran and whether they passed, and anything left untested;
-- how to start: in this session they describe a task, the `encargo` skill launches it into its own worktree and agent;
-  when that agent finishes, its branch appears above the prompt with **Subir**;
+- how to start: in this session they describe a task, the `encargo` skill launches it into its own worktree and agent
+  (with Orca, in Orca; without it, in a new tab or window of their terminal, or with a command to paste if the
+  launcher is `manual`); when that agent finishes, its branch appears above the prompt with **Subir**;
 - that every piece can be switched off in `/config` (plugin `equipo`), and that they can ask you to change the
   settings at any time.
 

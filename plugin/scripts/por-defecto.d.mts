@@ -11,6 +11,8 @@ export type Ajustes = {
   generados: string[]
   pruebas: { patron: string }
   pendientes: string
+  worktrees: { gestor: string; carpeta: string; prefijoRama: string }
+  lanzar: { preajuste: string; orden: string[] }
   orca: { repo: string }
   sesionPrincipal: string
 }

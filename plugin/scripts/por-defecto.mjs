@@ -29,6 +29,20 @@ export const POR_DEFECTO = Object.freeze({
   pruebas: Object.freeze({ patron: '\\.(test|spec)\\.[cm]?[jt]sx?$' }),
   /** Documento donde /pendiente apunta cosas y las skills apuntan lo que queda sin probar. */
   pendientes: 'docs/pendientes.md',
+  worktrees: Object.freeze({
+    /** Quién crea y cierra los worktrees: 'orca', 'git' o 'auto' (Orca si está en el PATH, si no git). */
+    gestor: 'auto',
+    /** Con git: carpeta de cada worktree, desde la copia principal; {repo} y {nombre} se cambian. */
+    carpeta: '../{repo}-worktrees/{nombre}',
+    /** Con git: lo que va delante del nombre para formar la rama (p. ej. 'ana/'). Orca pone el suyo. */
+    prefijoRama: '',
+  }),
+  /**
+   * Con git: cómo se abre la sesión del agente. `preajuste`: 'auto' (lo que haya en la máquina), 'tmux', 'wt',
+   * 'terminal', 'iterm', 'manual' (no abre nada: da la orden para pegarla) o 'propio' (la lista de `orden`, con
+   * {ruta}, {nombre} y {prompt}).
+   */
+  lanzar: Object.freeze({ preajuste: 'auto', orden: Object.freeze([]) }),
   /** Nombre del repositorio en Orca; '' para el de la carpeta de la copia principal. */
   orca: Object.freeze({ repo: '' }),
   /** Principio del nombre de la sesión de la copia principal en ListAgents; '' para el de su carpeta. */

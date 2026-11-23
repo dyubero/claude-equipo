@@ -1,6 +1,6 @@
 ---
 name: lista-para-subir
-description: Use when, in an Orca worktree (not the main copy; .git is a file), the assigned work or a fix requested from the main session is finished and the branch must be offered for upload to the main branch, or when typing /lista-para-subir.
+description: Use when, in a task worktree of the equipo plugin (not the main copy; .git is a file), the assigned work or a fix requested from the main session is finished and the branch must be offered for upload to the main branch, or when typing /lista-para-subir.
 ---
 
 # /lista-para-subir — avisar de que la rama está lista

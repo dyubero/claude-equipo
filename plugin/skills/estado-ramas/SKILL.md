@@ -1,6 +1,6 @@
 ---
 name: estado-ramas
-description: Use when, in the main copy of a repository that works with Orca worktrees, the user asks how the branches or worktrees are going, which are ready, stuck or waiting, what would conflict if uploaded now, or types /estado-ramas.
+description: Use when, in the main copy of a repository that works with the equipo plugin (one worktree per task), the user asks how the branches or worktrees are going, which are ready, stuck or waiting, what would conflict if uploaded now, or types /estado-ramas.
 ---
 
 # /estado-ramas — cómo van todas las ramas
@@ -17,7 +17,8 @@ Si el proyecto no tiene `.claude/equipo.json`, todavía no está preparado: sigu
 ## Pasos
 
 1. `node ../../scripts/estado.mjs` (con la ruta completa). Para cada worktree da:
-   - su fase, su bloque (comentario de Orca) y el estado de su agente;
+   - su fase, su bloque de decisiones reservado y el estado de su agente (solo se sabe con Orca; sin él sale
+     «sin agente» y la fase se deduce de git);
    - `+delante/−detrás` de la rama principal y lo que tiene sin confirmar (sin contar los `prohibidos`).
 
    Después ensaya la subida de todas las que llevan commits: en qué orden entrarían, cuáles chocarían, con quién y en

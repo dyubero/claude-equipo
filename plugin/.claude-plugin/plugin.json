@@ -1,14 +1,14 @@
 {
   "name": "equipo",
-  "version": "0.1.1",
-  "description": "Trabajo en paralelo con agentes en worktrees de Orca: subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo",
+  "version": "0.2.0",
+  "description": "Trabajo en paralelo con agentes, cada uno en su worktree (con Orca o con git a secas): subidas a la rama principal con ensayo y cola, franja del contexto, guardas de git y skills del flujo",
   "author": {
     "name": "dyubero"
   },
   "license": "MIT",
   "keywords": [
-    "orca",
     "worktrees",
+    "orca",
     "git",
     "subidas",
     "agentes"
