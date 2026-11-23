@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 import { AJUSTES, argumentos, git, imprimir, POR_DEFECTO, raiz } from './comun.mjs'
 import { detectar } from './lanzadores.mjs'
+import { PATRONES_DE_PRUEBAS } from './por-defecto.mjs'
 
 // ---------------------------------------------------------------- reading helpers
 
@@ -48,8 +49,8 @@ function toolVersion(command) {
 
 /** Test-file patterns (regular expressions over paths from the root) for each ecosystem. */
 export const TEST_PATTERNS = {
-  node: POR_DEFECTO.pruebas.patron,
-  deno: POR_DEFECTO.pruebas.patron,
+  node: PATRONES_DE_PRUEBAS[0],
+  deno: PATRONES_DE_PRUEBAS[0],
   python: '(^|/)(test_[^/]*|[^/]*_test)\\.py$',
   rust: '(^|/)tests/[^/]*\\.rs$',
   go: '_test\\.go$',
@@ -627,7 +628,8 @@ export function propose(f) {
   }
   commands.regenerar = joined(eco.map(e => e.regenerate))
   const patterns = [...new Set(eco.map(e => TEST_PATTERNS[e.id]).filter(Boolean))]
-  if (patterns.length > 0 && !(patterns.length === 1 && patterns[0] === POR_DEFECTO.pruebas.patron)) {
+  // The default pattern already covers the usual conventions; only what it does not know goes in the proposal.
+  if (patterns.some(p => !PATRONES_DE_PRUEBAS.includes(p))) {
     proposal.pruebas = { patron: patterns.length === 1 ? patterns[0] : patterns.map(p => `(?:${p})`).join('|') }
   }
   const proposed = Object.values(commands).join(' ')

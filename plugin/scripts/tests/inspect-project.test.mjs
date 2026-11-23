@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'node:test'
 
 import * as ip from '../inspect-project.mjs'
+import { POR_DEFECTO } from '../por-defecto.mjs'
 import { borrar, commit, escribir, repoNuevo, sh } from './ayudas.mjs'
 
 const pkg = (scripts, dev = {}, extra = {}) => JSON.stringify({ name: 'shop', scripts, devDependencies: dev, ...extra }, null, 2)
@@ -40,8 +41,8 @@ describe('inspect-project', () => {
     assert.equal(facts.isMainCopy, true)
     assert.equal(facts.ecosystems[0].id, 'node')
     assert.equal(facts.commits.language, 'es')
-    // npm run build and npm test are the defaults: they are not in the proposal.
-    assert.deepEqual(proposal.comandos, { probarArchivos: 'npx vitest run {archivos}', regenerar: 'npm install' })
+    // No command is a default any more: everything the project runs is in the proposal.
+    assert.deepEqual(proposal.comandos, { compilar: 'npm run build', probar: 'npm test', probarArchivos: 'npx vitest run {archivos}', regenerar: 'npm install' })
     assert.deepEqual(proposal.generados, ['package-lock.json'])
     assert.deepEqual(proposal.unir, ['CHANGELOG.md'])
     assert.deepEqual(proposal.prohibidos, ['.env.local', 'dist/'])
@@ -85,8 +86,10 @@ describe('inspect-project', () => {
     assert.equal(facts.ecosystems[0].id, 'python')
     assert.equal(proposal.idioma, 'fr')
     assert.deepEqual(proposal.comandos, { compilar: 'uv run mypy .', probar: 'uv run pytest', probarArchivos: 'uv run pytest {archivos}', regenerar: 'uv lock' })
-    assert.deepEqual(proposal.pruebas, { patron: ip.TEST_PATTERNS.python })
-    assert.match('tests/test_cart.py', new RegExp(proposal.pruebas.patron))
+    // The default pattern already knows pytest's conventions: nothing to propose.
+    assert.equal(proposal.pruebas, undefined)
+    assert.match('tests/test_cart.py', new RegExp(POR_DEFECTO.pruebas.patron))
+    assert.doesNotMatch('src/cart.py', new RegExp(POR_DEFECTO.pruebas.patron))
     assert.deepEqual(proposal.generados, ['uv.lock'])
   })
 
@@ -160,7 +163,8 @@ describe('inspect-project', () => {
       assert.ok(questions.some(q => /make is not installed/.test(q)))
     }
     assert.deepEqual(proposal.generados, ['package-lock.json', 'go.sum'])
-    const patron = new RegExp(proposal.pruebas.patron)
+    assert.equal(proposal.pruebas, undefined)
+    const patron = new RegExp(POR_DEFECTO.pruebas.patron)
     assert.ok(patron.test('internal/cart/cart_test.go') && patron.test('src/cart.test.ts'))
     assert.ok(questions.some(q => /Several ecosystems: Node, Go/.test(q)))
     // Without the Makefile, the commands are joined.

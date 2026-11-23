@@ -3,6 +3,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
 import { mezclar, POR_DEFECTO } from './por-defecto.mjs'
@@ -98,30 +99,41 @@ export function resolverRama(nombre, repo = '.') {
   return ''
 }
 
-// ---------------------------------------------------------------- ajustes del proyecto (.claude/equipo.json)
+// ---------------------------------------------------------------- ajustes (~/.claude/equipo.json y el del proyecto)
 
 export const AJUSTES = '.claude/equipo.json'
 
 export { mezclar, POR_DEFECTO }
 
-/** Los ajustes de la copia en la que está `repo`, con los valores por defecto donde no diga nada. */
-export function ajustes(repo = '.') {
-  let propios = {}
+/** El archivo de ajustes de la persona, para todos sus repositorios (EQUIPO_AJUSTES_USUARIO lo cambia: pruebas). */
+export const ajustesDeUsuario = () => process.env.EQUIPO_AJUSTES_USUARIO || join(homedir(), AJUSTES)
+
+function leerJson(ruta) {
+  if (!existsSync(ruta)) return null
+  try {
+    return JSON.parse(readFileSync(ruta, 'utf8'))
+  } catch (error) {
+    throw new Error(`${ruta} no es JSON válido: ${error.message}`)
+  }
+}
+
+/** Los dos archivos de ajustes: { usuario, proyecto }, cada uno { ruta, datos } (`datos` es null si no existe). */
+export function capas(repo = '.') {
   let r
   try {
     r = raiz(repo)
   } catch {
     r = repo
   }
-  const ruta = join(r, AJUSTES)
-  if (existsSync(ruta)) {
-    try {
-      propios = JSON.parse(readFileSync(ruta, 'utf8'))
-    } catch (error) {
-      throw new Error(`${AJUSTES} no es JSON válido: ${error.message}`)
-    }
-  }
-  return mezclar(POR_DEFECTO, propios)
+  const usuario = ajustesDeUsuario()
+  const proyecto = join(r, AJUSTES)
+  return { usuario: { ruta: usuario, datos: leerJson(usuario) }, proyecto: { ruta: proyecto, datos: leerJson(proyecto) } }
+}
+
+/** Los ajustes que valen en la copia en la que está `repo`: por defecto, los del usuario y, encima, los del proyecto. */
+export function ajustes(repo = '.') {
+  const c = capas(repo)
+  return mezclar(POR_DEFECTO, c.usuario.datos ?? {}, c.proyecto.datos ?? {})
 }
 
 /** Los documentos en los que dos ramas que solo añaden líneas se unen solas: `unir` más los activos. */

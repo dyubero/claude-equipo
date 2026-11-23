@@ -1,0 +1,270 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "equipo plugin settings (.claude/equipo.json and ~/.claude/equipo.json)",
+  "description": "Every key is optional: anything missing takes its default. The project file goes on top of the user file.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "ramaPrincipal": {
+      "description": "Branch every task branch is merged into.",
+      "type": "string",
+      "default": "main"
+    },
+    "idioma": {
+      "description": "Language (ISO 639-1 code: en, es, fr…) agents write commits, notices and documents in. Also the language of the plugin's own texts when it has a catalogue for it (es, en); English otherwise.",
+      "type": "string",
+      "default": "es"
+    },
+    "comandos": {
+      "description": "Commands the batch check and the worktree agents run.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "compilar": {
+          "description": "Checks that the code compiles (build, type check, lint). Empty if there is nothing to compile.",
+          "type": "string",
+          "default": ""
+        },
+        "probar": {
+          "description": "Runs the whole test suite.",
+          "type": "string",
+          "default": ""
+        },
+        "probarArchivos": {
+          "description": "Runs only some tests: {archivos} is replaced by the list of test files. Empty: always use comandos.probar.",
+          "type": "string",
+          "default": ""
+        },
+        "regenerar": {
+          "description": "Rebuilds the files listed in \"generados\" after a batch is merged (npm install, uv lock, go mod tidy…).",
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "prohibidos": {
+      "description": "Files or folders (paths from the root, no wildcards; folders end in /) that never go into a commit.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "decisiones": {
+      "description": "Numbered design decisions in one document, with a block of numbers reserved per branch.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activo": {
+          "description": "Turn numbered decisions on.",
+          "type": "boolean",
+          "default": false
+        },
+        "documento": {
+          "description": "The document that holds the decisions.",
+          "type": "string",
+          "default": "DESIGN.md"
+        },
+        "prefijo": {
+          "description": "How decision headings start: \"D\" for \"### D12. Title\", \"ADR-\" for \"## ADR-12 Title\".",
+          "type": "string",
+          "default": "D"
+        },
+        "bloque": {
+          "description": "How many numbers each branch gets.",
+          "type": "integer",
+          "default": 10,
+          "minimum": 1
+        }
+      }
+    },
+    "backlog": {
+      "description": "Backlog kept as a table with a code in the first cell; branches prefix new codes with their name and the main copy renumbers them on merge.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activo": {
+          "description": "Turn the coded backlog on.",
+          "type": "boolean",
+          "default": false
+        },
+        "documento": {
+          "description": "The backlog file.",
+          "type": "string",
+          "default": "BACKLOG.md"
+        }
+      }
+    },
+    "unir": {
+      "description": "Documents where, if two branches only append lines at the same spot, both additions are kept (changelogs, logs).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "generados": {
+      "description": "Patterns (.gitattributes syntax) of derived files: on a merge conflict the current version is kept, then comandos.regenerar rebuilds them. Never real source files.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "pruebas": {
+      "description": "How test files are recognised.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "patron": {
+          "description": "Regular expression over paths from the root that says which files are tests. The default covers the usual conventions of JS/TS, Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart and Swift.",
+          "type": "string",
+          "default": "(?:\\.(test|spec)\\.[cm]?[jt]sx?$)|(?:(^|/)(test_[^/]*|[^/]*_test)\\.py$)|(?:(^|/)tests/[^/]*\\.rs$)|(?:_test\\.go$)|(?:(Test|Tests|IT|Spec)\\.(java|kt|scala|groovy)$)|(?:(Test|Tests)\\.(cs|fs|vb)$)|(?:Test\\.php$)|(?:(_spec|_test)\\.rb$)|(?:_test\\.exs$)|(?:_test\\.dart$)|(?:Tests?\\.swift$)"
+        }
+      }
+    },
+    "pendientes": {
+      "description": "Document where /pendiente, the encargo skill and the batch check write what is in progress and what was left untested.",
+      "type": "string",
+      "default": "docs/pendientes.md"
+    },
+    "fusion": {
+      "description": "How a branch enters the main branch.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "estrategia": {
+          "description": "\"merge\": a merge commit (--no-ff). \"squash\": a single commit with the whole branch.",
+          "type": "string",
+          "default": "merge",
+          "enum": [
+            "merge",
+            "squash"
+          ]
+        }
+      }
+    },
+    "contexto": {
+      "description": "The context bar above the prompt.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "aviso": {
+          "description": "Percentage of the context window from which the bar turns yellow.",
+          "type": "integer",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 100
+        },
+        "peligro": {
+          "description": "Percentage of the context window from which the bar turns red.",
+          "type": "integer",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "guardas": {
+      "description": "The git guards.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "barridos": {
+          "description": "In the main copy, reject \"git add -A\", \"git add .\", \"git add -u\" and \"git commit -a\". The \"prohibidos\" list is enforced either way.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "worktrees": {
+      "description": "Where task worktrees come from.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gestor": {
+          "description": "Who creates and closes them: \"orca\", \"git\" (plain git worktree) or \"auto\" (Orca when it is in PATH, git otherwise).",
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "orca",
+            "git"
+          ]
+        },
+        "carpeta": {
+          "description": "With git: folder of each worktree, relative to the main copy. {repo} is the main copy's folder name and {nombre} the task's short name.",
+          "type": "string",
+          "default": "../{repo}-worktrees/{nombre}"
+        },
+        "prefijoRama": {
+          "description": "With git: what goes before the task name to form the branch (\"ana/\" gives ana/cart).",
+          "type": "string",
+          "default": ""
+        },
+        "cerrarAlSubir": {
+          "description": "Close a branch's worktree once the batch check approves it.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "lanzar": {
+      "description": "With git worktrees: how the agent's session is opened. Depends on the machine, so it usually belongs in ~/.claude/equipo.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preajuste": {
+          "description": "\"auto\" detects it (tmux inside tmux, Windows Terminal, Terminal.app or iTerm on macOS, otherwise manual); \"manual\" opens nothing and gives a command to paste; \"propio\" runs lanzar.orden.",
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "tmux",
+            "wt",
+            "terminal",
+            "iterm",
+            "manual",
+            "propio"
+          ]
+        },
+        "orden": {
+          "description": "With \"propio\": the command as a list (program and arguments, no shell). {ruta}, {nombre} and {prompt} are replaced. It must return right away.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "orca": {
+      "description": "Orca specifics.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "description": "The repository's name in Orca; empty means the name of the main copy's folder.",
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "sesionPrincipal": {
+      "description": "How the main session's name starts in ListAgents, so worktree agents know whom to notify; empty means derived from the folder name.",
+      "type": "string",
+      "default": ""
+    },
+    "textos": {
+      "description": "Texts of the plugin replaced by your own: { \"<key>\": \"<template with {placeholders}>\" }.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {}
+    }
+  }
+}

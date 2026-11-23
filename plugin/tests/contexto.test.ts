@@ -62,6 +62,20 @@ test('se pone al día tras cada turno y avisa con color al llenarse', async ($, 
   expect((linea?.props as { color?: string } | undefined)?.color).toBe('error')
 })
 
+test('los umbrales de aviso y peligro salen de los ajustes (contexto.aviso y contexto.peligro)', async ($, on) => {
+  preparar(on, 50_000)
+  on('session.root', () => ({ value: 'C:/x' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', ($, e) => (e.path.replace(/\\/g, '/').endsWith('x/.claude/equipo.json') ? { value: '{ "contexto": { "aviso": 20, "peligro": 40 } }' } : { deny: 'no existe' }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  await arrancar($)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  // 25 % usado: por defecto ni avisa; con el aviso en el 20 %, sale en amarillo.
+  const linea = await ui.find({ type: 'Text', text: /◆ Contexto: 50k de 200k usados \(25 %\)/ })
+  expect(linea).toBeDefined()
+  expect((linea?.props as { color?: string } | undefined)?.color).toBe('warning')
+})
+
 test('«Compactar» compacta y pone la cifra al día', async ($, on) => {
   const r = preparar(on, 120_000)
   await arrancar($)

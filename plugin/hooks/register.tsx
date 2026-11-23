@@ -5,63 +5,35 @@
 //              comprobación del lote, que devuelve con la herramienta resultado_lote.
 //   /ramas, /reservar y /pendiente — panel de worktrees, bloques de decisiones y apuntes.
 //   guardas  — desde un worktree, niega fusionar en la copia principal; en la principal, niega git add/commit de todo;
-//              en cualquier copia, los «prohibidos» de .claude/equipo.json no entran en un commit.
-// Cada pieza se apaga con su interruptor en /config. Lo que no usa `$` está en los demás archivos de esta carpeta.
+//              en cualquier copia, los «prohibidos» de los ajustes no entran en un commit.
+// Cada pieza se apaga con su interruptor en /config.
+//
+// Este archivo es solo el cableado: qué evento llama a qué. Cada pieza está en el suyo:
+//   base.ts     el estado, los ajustes, los scripts de Node y los mensajes a otras sesiones
+//   franja.tsx  el dibujo de la franja (contexto y subidas)
+//   cola.ts     la cola de «Subir»: ensayo, fusiones y petición del lote
+//   lote.ts     resultado_lote: avisos a los agentes y cierre de worktrees
+//   panel.tsx   /ramas, /reservar y /pendiente
+//   guarda.ts   la guarda de las órdenes de git
+// Lo que no necesita `$` (leer avisos, escribir textos, juzgar una orden) está en los demás archivos de la carpeta.
 // Ver el README del repositorio.
 
-import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderNode } from 'claude-code'
+import { atom, update } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-import type { Contexto, PanelRamas, Rama, Subida } from '../types'
-import type { Ajustes } from './ajustes'
-import { ajustesDeTexto, ARCHIVO } from './ajustes'
-import type { Modo } from './commits'
-import { juzgar, motivoProhibido, prohibidosConCambios } from './commits'
-import { color, miles, texto } from './contexto'
-import type { Copia } from './copia'
-import { montarCopia } from './copia'
-import type { FranjaEvento } from './dibujo'
+import { ARCHIVO, problemasDeTexto } from './ajustes'
+import { CONTEXTO_INICIAL, enPrincipal, scripts } from './base'
+import { recibirSubida } from './cola'
 import { esDibujo } from './dibujo'
-import { fusionEnPrincipal, negativa } from './fusiones'
+import { franjaSubidas, leerContexto, lineaContexto } from './franja'
+import { guardar } from './guarda'
 import { faltan } from './herramientas'
-import { apuntar, apuntes } from './pendientes'
-import { cuentas, misma, montarRamas, rutasDeGit } from './ramas'
-import { revisar } from './revision'
-import { normalizar } from './rutas'
-import { llamadasGit } from './shell'
-import {
-  avisoDeSubida,
-  choquesDe,
-  codigosConPrefijo,
-  codigosSinRenumerar,
-  conflictos,
-  corto,
-  HERRAMIENTA,
-  leerPlan,
-  mensajeFusion,
-  peticionLote,
-  textoApartada,
-  textoConflicto,
-  textoFalla,
-  textoSolucionar,
-  textoSubida,
-} from './subidas'
-import type { Apartada, AvisoSubida, Fusionada, Plan } from './subidas'
-import { borrable, colorSubida, hoy, puedeSolucionar, resumenRamas, textoEstado } from './vista'
+import { resultado } from './lote'
+import { dibujarPanel, ordenPendiente, ordenRamas, ordenReservar, PANE } from './panel'
+import { avisoDeSubida, HERRAMIENTA } from './subidas'
 
-const CONTEXTO_INICIAL: Contexto = { tokens: null, ventana: 0, compactando: false, compactado: false }
+/** El estado de la franja del contexto (ver base.ts). */
 const contexto = atom({ plugin: 'equipo', key: 'contexto' } as const, CONTEXTO_INICIAL)
-const PANEL_INICIAL: PanelRamas = { ramas: [], siguiente: '', leido: 0, error: '' }
-const panel = atom({ plugin: 'equipo', key: 'panel' } as const, PANEL_INICIAL)
-const subidas = atom({ plugin: 'equipo', key: 'subidas' } as const, [] as Subida[])
-
-// Cola de «Subir»: una rama tras otra, nunca dos fusiones a la vez. Vive en el módulo: una recarga la vacía.
-const cola: string[] = []
-let procesando = false
-/** Nombre completo de resultado_lote: mcp__<plugin>__<nombre>. */
-const HERRAMIENTA_COMPLETA = `mcp__equipo__${HERRAMIENTA}`
-
-const PANE = 'ramas'
 
 export const register: Register = (on, options) => {
   const conContexto = options.contexto !== false
@@ -129,105 +101,18 @@ export const register: Register = (on, options) => {
     }).catch(($, e, next) => next(e))
   }
 
-  // ------------------------------------------------------------ ramas y reservas
-  on('command.run', { command: 'ramas' }, async $ => {
-    const datos = await cargarRamas($)
-    await $.ui.open({ id: PANE, title: 'Ramas' })
-    return { text: resumenRamas(datos) }
-  })
-
-  on('command.run', { command: 'reservar' }, async ($, e) => {
-    const a = await ajustesDe($)
-    if (!a.decisiones.activo) {
-      return { text: 'Las decisiones numeradas están apagadas (decisiones.activo en .claude/equipo.json): no hay bloques que reservar.' }
-    }
-    const datos = await cargarRamas($)
-    if (datos.error) return { text: `No he podido leer las ramas: ${datos.error}` }
-    const nombre = e.args.trim()
-    if (nombre === '') return { text: `Siguiente bloque libre: ${datos.siguiente} (tras la mayor decisión de las ramas y copias y de los bloques reservados).` }
-    const rama = datos.ramas.find(r => r.nombre === nombre || r.rama === nombre)
-    if (!rama) return { text: `No hay ningún worktree «${nombre}». Siguiente bloque libre: ${datos.siguiente}.` }
-    if (rama.comentario) return { text: `${rama.nombre} ya tiene el bloque ${rama.comentario}. Siguiente libre: ${datos.siguiente}.` }
-    if (!(await enPrincipal($))) return { text: `Las reservas se apuntan desde la copia principal. Siguiente bloque libre: ${datos.siguiente}.` }
-    // La reserva la apunta el script en el .git común (y en el comentario del worktree si hay Orca).
-    const hecho = (await script($, 'bloque.mjs', ['--reservar', rama.rama, '--json'], 30000)) as { bloque?: string; error?: string } | null
-    if (!hecho?.bloque) return { text: `No he podido reservar el bloque: ${hecho?.error ?? 'bloque.mjs no ha contestado'}` }
-    await cargarRamas($)
-    return { text: `Reservado ${hecho.bloque} para ${rama.nombre}.` }
-  })
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const datos = await read($, panel)
-    return (
-      <Box flexDirection="column" width={e.props.bodyColumns}>
-        {datos.error ? <Text color="error">No he podido leer las ramas: {datos.error}</Text> : null}
-        {datos.ramas.map(r => (
-          <Box key={`rama-${r.nombre}`} flexDirection="row" gap={1}>
-            <Text color={r.principal ? 'claude' : r.delante === 0 ? 'inactive' : 'text'} wrap="truncate-end">
-              {r.principal ? '★' : r.delante === 0 ? '✔' : '●'} {r.nombre.padEnd(22)} {(r.comentario || '—').slice(0, 14).padEnd(14)}{' '}
-              {r.principal ? 'copia principal' : r.delante === 0 ? `todo en la principal (−${r.detras})` : `+${r.delante} / −${r.detras}`}
-              {r.agente ? `  · agente ${r.agente}` : ''}
-            </Text>
-          </Box>
-        ))}
-        <Box flexDirection="row" gap={1} marginTop={1}>
-          {datos.siguiente ? <Text bold>Siguiente bloque libre: {datos.siguiente}</Text> : null}
-          <Button key="actualizar" label="Actualizar" onPress={() => void cargarRamas($)} />
-        </Box>
-        <Text dimColor>+n: commits que la principal no tiene · −n: commits de la principal que la rama no tiene · ✔ todo está en la principal</Text>
-      </Box>
-    )
-  })
-
-  // ------------------------------------------------------------ /pendiente
-  on('command.run', { command: 'pendiente' }, async ($, e) => {
-    const raiz = await $.session.root()
-    const documento = (await ajustesDe($)).pendientes
-    const ruta = `${raiz}/${documento}`
-    const actual = await $.fs.read(ruta).catch(() => null)
-    const texto = e.args.trim()
-    if (texto === '') {
-      const lista = typeof actual === 'string' ? apuntes(actual) : []
-      return { text: lista.length > 0 ? `Apuntes rápidos de ${documento}:\n${lista.join('\n')}` : `No hay apuntes rápidos en ${documento}. Uso: /pendiente <texto>` }
-    }
-    const fecha = hoy(await $.clock.now())
-    const base = typeof actual === 'string' ? actual : `# Pendientes\n\nActualizado el ${fecha}.\n`
-    const porcelana = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd: raiz, timeoutMs: 10000 }).catch(() => null)
-    const rama = rutasDeGit(porcelana?.stdout ?? '').find(w => misma(w.ruta, raiz))?.rama ?? ''
-    await $.fs.write(ruta, apuntar(base, texto, fecha, rama))
-    return { text: `Apuntado en ${documento} (Apuntes rápidos): ${texto}` }
-  })
+  // ------------------------------------------------------------ /ramas, /reservar y /pendiente
+  on('command.run', { command: 'ramas' }, async $ => ({ text: await ordenRamas($) }))
+  on('command.run', { command: 'reservar' }, async ($, e) => ({ text: await ordenReservar($, e.args) }))
+  on('command.run', { command: 'pendiente' }, async ($, e) => ({ text: await ordenPendiente($, e.args) }))
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => dibujarPanel($, e))
 
   // ------------------------------------------------------------ guardas sobre las órdenes de git
   on('tool.call', { tool: ['Bash', 'PowerShell'] }, async ($, e, next) => {
     const orden = String((e as { command?: unknown }).command ?? '')
     if (!/\bgit\b/.test(orden)) return next(e)
-    const c = await copia($)
-    const carpeta = await carpetaActual($, c)
-
-    if (activas.fusiones) {
-      const fusion = fusionEnPrincipal(orden, carpeta, c)
-      if (fusion) {
-        const { ramaPrincipal } = await leerAjustes($, c.raizOriginal)
-        return { deny: negativa(fusion, ramaPrincipal) }
-      }
-    }
-
-    if (activas.commits) {
-      const { prohibidos } = await leerAjustes($, c.raizOriginal)
-      for (const git of llamadasGit(orden, carpeta, c.home, c.plegar)) {
-        const juicio = juzgar(git, c, prohibidos)
-        if (juicio.tipo === 'niega') return { deny: `equipo: ${juicio.motivo}` }
-        if (juicio.tipo === 'mirar') {
-          // Las rutas normalizadas pueden ir en minúsculas: git, con la ruta tal como es.
-          const carpetaGit = juicio.copia === c.raiz ? c.raizOriginal : juicio.copia === c.principal ? c.principalOriginal : juicio.copia
-          const entran = await prohibidosQueEntran($, carpetaGit, juicio.modo, prohibidos)
-          if (entran.length > 0) return { deny: `equipo: ${motivoProhibido(entran.join(', '))}` }
-        }
-      }
-    }
-    return next(e)
+    const motivo = await guardar($, orden, activas)
+    return motivo === null ? next(e) : { deny: motivo }
   }).catch(($, e, next) => {
     if (next.called) return next(e)
     // Si la guarda falla, una fusión no pasa sin mirarla; lo demás sigue, para no bloquear la sesión entera.
@@ -238,81 +123,7 @@ export const register: Register = (on, options) => {
   })
 }
 
-// ---------------------------------------------------------------- ajustes
-
-async function leerAjustes($: EngineInterface, raiz: string): Promise<Ajustes> {
-  return ajustesDeTexto(await $.fs.read(`${raiz}/${ARCHIVO}`).catch(() => null))
-}
-
-// ---------------------------------------------------------------- contexto
-
-async function leerContexto($: EngineInterface): Promise<void> {
-  const uso = await $.session.usage().catch(() => null)
-  if (!uso) return
-  await update($, contexto, actual => ({
-    ...actual,
-    tokens: uso.context.tokens ?? actual.tokens,
-    ventana: uso.context.window || actual.ventana,
-  }))
-}
-
-async function compactar($: EngineInterface): Promise<void> {
-  await update($, contexto, actual => ({ ...actual, compactando: true }))
-  try {
-    const hecho = await $.session.compact()
-    if ('skip' in hecho) {
-      $.ui.toast(`No se ha compactado: ${hecho.skip}`)
-    } else {
-      // Con tokensAfter la cifra se pone al día ya; si no, con la próxima respuesta.
-      const despues = hecho.tokensAfter
-      await update($, contexto, actual =>
-        despues === undefined ? { ...actual, compactado: true } : { ...actual, tokens: despues, compactado: false },
-      )
-      $.ui.toast(`Compactado${hecho.tokensBefore !== undefined && despues !== undefined ? `: de ${miles(hecho.tokensBefore)} a ${miles(despues)}` : ''}`)
-    }
-  } catch (error) {
-    $.ui.toast(`No se ha podido compactar (¿hay un turno en marcha?): ${String(error).slice(0, 120)}`)
-  } finally {
-    await update($, contexto, actual => ({ ...actual, compactando: false }))
-  }
-}
-
-/** La línea del contexto en la franja (register.tsx la junta con las demás). */
-async function lineaContexto($: EngineInterface, e: FranjaEvento): Promise<RenderNode | null> {
-  const { Box, Text, Button } = $.ui.resolve(e)
-  const c = await read($, contexto)
-  return (
-    <Box key="contexto" flexDirection="row" gap={1} width={e.props.bodyColumns}>
-      <Text color={color(c)} wrap="truncate-end">
-        {texto(c)}
-      </Text>
-      {c.tokens !== null && !c.compactando && !e.props.isWorking ? (
-        <Button key="compactar" label="Compactar" onPress={() => compactar($)} />
-      ) : null}
-    </Box>
-  )
-}
-
-// ---------------------------------------------------------------- equipo y subidas
-
-const scripts = ($: EngineInterface) => `${$.plugin.root.replace(/\\/g, '/')}/scripts`
-
-type Salida = { exitCode: number; stdout: string; stderr: string }
-
-/**
- * `node scripts/<nombre> …` en la raíz de la sesión, y el JSON de su última línea; null si no se ha podido lanzar o no
- * ha escrito JSON. No mira el código de salida: los scripts dicen en el JSON lo que ha pasado.
- */
-async function script($: EngineInterface, nombre: string, args: string[], timeoutMs: number): Promise<unknown> {
-  const raiz = await $.session.root()
-  const r = await $.process.run(['node', `${scripts($)}/${nombre}`, ...args], { cwd: raiz, timeoutMs }).catch(() => null)
-  if (!r) return null
-  try {
-    return JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as unknown
-  } catch {
-    return null
-  }
-}
+// ---------------------------------------------------------------- al empezar la sesión
 
 /** Al empezar la sesión: los comandos y, con las subidas, los drivers de fusión y resultado_lote (en la principal). */
 async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<void> {
@@ -325,8 +136,15 @@ async function empezarEquipo($: EngineInterface, conSubidas: boolean): Promise<v
   await $.command.register({ name: 'pendiente', description: 'Apunta un pendiente en el documento de pendientes (equipo)', argumentHint: '<texto>' })
   // Sin ajustes valen los de por defecto (npm): en la principal se le recuerda al usuario que lo adapte a su proyecto.
   const propios = await $.fs.read(`${await $.session.root()}/${ARCHIVO}`).catch(() => null)
-  if (typeof propios !== 'string' && (await enPrincipal($))) {
-    await $.ui.toast('equipo: este proyecto aún no tiene .claude/equipo.json. Pide a Claude que lo adapte (/equipo:adapt-to-project).')
+  if (await enPrincipal($)) {
+    if (typeof propios !== 'string') {
+      await $.ui.toast('equipo: este proyecto aún no tiene .claude/equipo.json. Pide a Claude que lo adapte (/equipo:adapt-to-project).')
+    } else {
+      const problemas = problemasDeTexto(propios)
+      if (problemas.length > 0) {
+        await $.ui.toast(`equipo: ${ARCHIVO} tiene ${problemas.length === 1 ? 'un problema' : `${problemas.length} problemas`}: ${problemas[0]}${problemas.length > 1 ? '…' : ''} (node "${scripts($)}/ajustes.mjs" --comprobar)`)
+      }
+    }
   }
   if (!conSubidas) return
   await comprobarHerramientas($)
@@ -370,436 +188,8 @@ async function comprobarHerramientas($: EngineInterface): Promise<void> {
   for (const linea of faltan({ node: await version('node'), git: await version('git') })) await $.ui.toast(`equipo: ${linea}.`)
 }
 
-/** La franja de las subidas, o null si no hay ninguna (register.tsx la junta con las demás). */
-async function franjaSubidas($: EngineInterface, e: FranjaEvento): Promise<RenderNode | null> {
-  const listas = await read($, subidas)
-  if (listas.length === 0) return null
-  const tabla = $.ui.resolve(e)
-  const { Box, Text, Button } = tabla
-  // El campo de texto no está en todas las superficies; donde no está, «Solucionar» manda sin indicación.
-  const Input = 'Input' in tabla ? tabla.Input : null
-  const pendientes = listas.filter(s => s.estado === 'lista')
-  const marcadas = pendientes.filter(s => s.marcada)
-  return (
-    <Box key="subidas" flexDirection="column" width={e.props.bodyColumns}>
-      {listas.map(s => (
-        <Box key={`subida-${s.rama}`} flexDirection="column">
-          <Box flexDirection="row" gap={1}>
-            {s.estado === 'lista' ? (
-              <Button key={`marcar-${s.rama}`} label={s.marcada ? '[x]' : '[ ]'} plain onPress={() => marcar($, s.rama)} />
-            ) : null}
-            <Text bold color={colorSubida(s.estado)} wrap="truncate-end">
-              ⇡ {s.rama} ({s.commit.slice(0, 9)}) · {textoEstado(s)}
-            </Text>
-            {s.estado === 'lista' || s.estado === 'error' ? (
-              <Button key={`subir-${s.rama}`} label="Subir" variant="primary" onPress={() => subir($, [s.rama])} />
-            ) : null}
-            {puedeSolucionar(s) ? (
-              <Button
-                key={`solucionar-${s.rama}`}
-                label="Solucionar"
-                onPress={() => (Input ? poner($, s.rama, { estado: 'nota', previo: s.estado }) : mandarSolucion($, s.rama, ''))}
-              />
-            ) : null}
-            {s.estado === 'nota' ? (
-              <Button key={`cancelar-${s.rama}`} label="Cancelar" onPress={() => poner($, s.rama, { estado: s.previo || 'lista' })} />
-            ) : null}
-            {borrable(s.estado) ? <Button key={`borrar-${s.rama}`} label="Borrar" onPress={() => borrar($, s.rama)} /> : null}
-          </Box>
-          {s.resumen ? (
-            <Text dimColor wrap="truncate-end">
-              {'  '}
-              {s.resumen}
-            </Text>
-          ) : null}
-          {s.estado === 'lista'
-            ? (s.choques ?? []).map((c, i) => (
-                <Text key={`choque-${s.rama}-${i}`} color="error" wrap="truncate-end">
-                  {'  ⚠ '}chocaría con {c.con.map(corto).join(', ')}: {c.archivos.join(', ')}
-                </Text>
-              ))
-            : null}
-          {s.porRevisar.map((l, i) => (
-            <Text key={`revisar-${s.rama}-${i}`} color="claude" wrap="truncate-end">
-              {'  ! '}
-              {l}
-            </Text>
-          ))}
-          {s.estado === 'nota' && Input ? (
-            <Input
-              key={`nota-${s.rama}`}
-              label="  Indicación para el agente (opcional):"
-              placeholder="Enter manda lo de «Por revisar» tal cual"
-              submitLabel="mandar"
-              autoFocus
-              onSubmit={(valor: string) => void mandarSolucion($, s.rama, valor)}
-            />
-          ) : null}
-        </Box>
-      ))}
-      {pendientes.length > 0 ? (
-        <Box flexDirection="row" gap={1}>
-          {marcadas.length > 0 ? (
-            <Button
-              key="subir-marcadas"
-              label={`Subir marcadas (${marcadas.length})`}
-              variant="primary"
-              onPress={() => subir($, marcadas.map(s => s.rama))}
-            />
-          ) : null}
-          {pendientes.length > 1 ? (
-            <Button key="subir-todas" label={`Subir todas (${pendientes.length})`} onPress={() => subir($, pendientes.map(s => s.rama))} />
-          ) : null}
-        </Box>
-      ) : null}
-    </Box>
-  )
-}
-
-async function enPrincipal($: EngineInterface): Promise<boolean> {
-  const raiz = await $.session.root()
-  const git = await $.fs.stat(`${raiz}/.git`).catch(() => undefined)
-  return git?.kind === 'dir'
-}
-
-async function ajustesDe($: EngineInterface): Promise<Ajustes> {
-  return leerAjustes($, await $.session.root())
-}
-
-async function cargarRamas($: EngineInterface): Promise<PanelRamas> {
-  const raiz = await $.session.root()
-  const a = await ajustesDe($)
-  const ahora = await $.clock.now()
-  const git = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd: raiz, timeoutMs: 10000 }).catch(() => null)
-  if (!git || git.exitCode !== 0) {
-    const fallo: PanelRamas = { ...PANEL_INICIAL, leido: ahora, error: 'git worktree list ha fallado' }
-    await update($, panel, () => fallo)
-    return fallo
-  }
-  const ramas: Rama[] = montarRamas(git.stdout, await script($, 'worktree.mjs', ['lista'], 30000), a.decisiones.prefijo)
-  for (const r of ramas) {
-    if (r.principal || !r.rama) continue
-    const cuenta = await $.process
-      .run(['git', 'rev-list', '--left-right', '--count', `${a.ramaPrincipal}...${r.rama}`], { cwd: raiz, timeoutMs: 10000 })
-      .catch(() => null)
-    if (cuenta && cuenta.exitCode === 0) [r.detras, r.delante] = cuentas(cuenta.stdout)
-  }
-  const libre = a.decisiones.activo ? ((await script($, 'bloque.mjs', ['--json'], 30000)) as { bloque?: string } | null) : null
-  const siguiente = libre?.bloque ?? ''
-  const datos: PanelRamas = { ramas, siguiente, leido: ahora, error: '' }
-  await update($, panel, () => datos)
-  return datos
-}
-
-async function revisarFusion($: EngineInterface, rama: string, commit: string, a: Ajustes) {
-  const raiz = await $.session.root()
-  const git = async (...args: string[]) => {
-    const r = await $.process.run(['git', ...args], { cwd: raiz, timeoutMs: 20000 }).catch(() => null)
-    return r && r.exitCode === 0 ? r.stdout : ''
-  }
-  let bloque: [number, number] | null = null
-  if (a.decisiones.activo) {
-    const ramas = montarRamas(await git('worktree', 'list', '--porcelain'), await script($, 'worktree.mjs', ['lista'], 30000), a.decisiones.prefijo)
-    bloque = ramas.find(r => r.rama === rama || r.nombre === rama)?.bloque ?? null
-  }
-  const documentos = [a.decisiones.activo ? a.decisiones.documento : '', a.backlog.activo ? a.backlog.documento : ''].filter(Boolean)
-  return revisar(
-    {
-      rama,
-      bloque,
-      padres: await git('rev-list', '--parents', '-n', '1', commit),
-      archivos: await git('diff', '--name-status', `${commit}^1`, commit),
-      diff: documentos.length > 0 ? await git('diff', '-U0', `${commit}^1`, commit, '--', ...documentos) : '',
-      estado: await git('status', '--porcelain'),
-      backlog: a.backlog.activo ? await git('show', `${commit}:${a.backlog.documento}`) : undefined,
-    },
-    a,
-  )
-}
-
-async function recibirSubida($: EngineInterface, aviso: AvisoSubida, texto: string): Promise<void> {
-  const nueva: Subida = { ...aviso, texto, hora: await $.clock.now(), estado: 'lista', marcada: false, fusion: '', detalle: '' }
-  const enCurso = cola.includes(aviso.rama)
-  await update($, subidas, lista => {
-    const antes = lista.find(s => s.rama === aviso.rama)
-    // Un aviso nuevo de una rama que ya está en cola o fusionándose no la saca de ahí.
-    if (antes && (enCurso || antes.estado === 'fusionando')) return lista
-    return [...lista.filter(s => s.rama !== aviso.rama), nueva]
-  })
-  $.ui.toast(`${aviso.rama} lista para subir${aviso.porRevisar.length > 0 ? ` · ${aviso.porRevisar.length} por revisar` : ''}`)
-  if (!procesando) await ensayarListas($)
-}
-
-async function poner($: EngineInterface, rama: string, cambios: Partial<Subida>): Promise<void> {
-  await update($, subidas, lista => lista.map(s => (s.rama === rama ? { ...s, ...cambios } : s)))
-}
-
-async function marcar($: EngineInterface, rama: string): Promise<void> {
-  await update($, subidas, lista => lista.map(s => (s.rama === rama ? { ...s, marcada: !s.marcada } : s)))
-}
-
-async function borrar($: EngineInterface, rama: string): Promise<void> {
-  const i = cola.indexOf(rama)
-  if (i >= 0) cola.splice(i, 1)
-  await update($, subidas, lista => lista.filter(s => s.rama !== rama))
-}
-
-async function subir($: EngineInterface, ramas: string[]): Promise<void> {
-  for (const rama of ramas) {
-    if (cola.includes(rama)) continue
-    cola.push(rama)
-    await poner($, rama, { estado: 'en-cola', marcada: false, detalle: '' })
-  }
-  if (!procesando) void procesar($)
-}
-
-/** Fusiona la cola en la principal una rama tras otra y, al vaciarla, pide a Claude la comprobación del lote. */
-async function procesar($: EngineInterface): Promise<void> {
-  if (procesando) return
-  procesando = true
-  const a = await ajustesDe($)
-  const lote: Fusionada[] = []
-  const fallidas: string[] = []
-  const apartadas: Apartada[] = []
-  const generados: string[] = []
-  try {
-    while (cola.length > 0) {
-      // Ensayo de lo que hay en cola contra la principal tal como está ahora: orden de menos a más choques, y fuera lo
-      // que chocaría de verdad. Sin ensayo (git que falla), en el orden de la cola.
-      const tanda = cola.splice(0, cola.length)
-      const plan = await ensayar($, tanda, a)
-      const orden = plan ? plan.orden : tanda
-      const tarde: Apartada[] = []
-      if (plan) {
-        generados.push(...plan.generados)
-        for (const e of plan.errores) {
-          await poner($, e.rama, { estado: 'error', detalle: e.motivo.slice(0, 300) })
-          fallidas.push(e.rama)
-        }
-        for (const p of plan.apartadas) {
-          if (p.con.includes(a.ramaPrincipal)) apartadas.push(await apartar($, p, a))
-          else {
-            tarde.push(p)
-            await poner($, p.rama, { estado: 'apartada', detalle: `chocaría con ${p.con.map(corto).join(', ')}: se avisa cuando entren` })
-          }
-        }
-      }
-      for (const rama of orden) {
-        const hecho = await fusionar($, rama, a).catch(async (error: unknown) => {
-          await poner($, rama, { estado: 'error', detalle: String(error).slice(0, 300) })
-          return null
-        })
-        if (hecho) lote.push(hecho)
-        else fallidas.push(rama)
-      }
-      // Las que chocan con otras del lote se avisan cuando esas ya están dentro, para que traigan la principal de una
-      // vez. Si ninguna de aquellas ha entrado, la rama vuelve a «lista para subir».
-      for (const p of tarde) {
-        const con = p.con.filter(c => lote.some(f => f.rama === c))
-        if (con.length > 0) apartadas.push(await apartar($, { ...p, con }, a))
-        else await poner($, p.rama, { estado: 'lista', detalle: '' })
-      }
-    }
-  } finally {
-    procesando = false
-  }
-  if (lote.length > 0) {
-    await $.prompt.submit({ text: peticionLote(lote, fallidas, apartadas, generados, { ajustes: a, scripts: scripts($), herramienta: HERRAMIENTA_COMPLETA }) })
-  } else if (fallidas.length + apartadas.length > 0) {
-    $.ui.toast(`No ha entrado ninguna rama: ${[...fallidas, ...apartadas.map(p => p.rama)].join(', ')}`)
-  }
-  await ensayarListas($)
-}
-
-/** Aparta una rama del lote y se lo dice a su agente con las ramas o la principal con las que choca. */
-async function apartar($: EngineInterface, p: Apartada, a: Ajustes): Promise<Apartada> {
-  const subida = (await read($, subidas)).find(s => s.rama === p.rama)
-  const enviado = subida ? await avisar($, subida.sesion, textoApartada(p.rama, p.con, p.archivos, a.ramaPrincipal)) : false
-  const detalle = `choca con ${p.con.map(corto).join(', ')} en ${p.archivos.join(', ')}${enviado ? '' : ' · no he podido avisar al agente'}`
-  await poner($, p.rama, { estado: 'apartada', detalle })
-  return p
-}
-
-/** `node scripts/ensayo.mjs --json` en la copia principal; null si falla. */
-async function ensayar($: EngineInterface, ramas: string[], a: Ajustes): Promise<Plan | null> {
-  if (ramas.length === 0) return null
-  const raiz = await $.session.root()
-  const r = await $.process
-    .run(['node', `${scripts($)}/ensayo.mjs`, '--json', '--base', a.ramaPrincipal, ...ramas], { cwd: raiz, timeoutMs: 180000 })
-    .catch(() => null)
-  return r && r.exitCode === 0 ? leerPlan(r.stdout) : null
-}
-
-/** Ensaya juntas las ramas que esperan en la franja y apunta con qué chocaría cada una (se ve antes de pulsar). */
-async function ensayarListas($: EngineInterface): Promise<void> {
-  const listas = (await read($, subidas)).filter(s => s.estado === 'lista').map(s => s.rama)
-  if (listas.length === 0) return
-  const a = await ajustesDe($)
-  const plan = await ensayar($, listas, a)
-  if (!plan) {
-    // Sin ensayo no se sabe con qué chocaría: se dice, en vez de dejar la franja como si no chocara con nada.
-    await update($, subidas, lista => lista.map(s => (listas.includes(s.rama) ? { ...s, sinEnsayo: true, choques: [] } : s)))
-    return
-  }
-  await update($, subidas, lista =>
-    lista.map(s => (listas.includes(s.rama) ? { ...s, sinEnsayo: false, choques: choquesDe(plan, s.rama, a.ramaPrincipal).map(c => ({ con: c.con, archivos: c.archivos })) } : s)),
-  )
-}
-
 /** Apunta en el .git común los drivers de fusión y los atributos de .claude/equipo.json. */
 async function instalarDrivers($: EngineInterface): Promise<void> {
   const raiz = await $.session.root()
   await $.process.run(['node', `${scripts($)}/fusion.mjs`, 'instalar'], { cwd: raiz, timeoutMs: 20000 }).catch(() => null)
-}
-
-async function fusionar($: EngineInterface, rama: string, a: Ajustes): Promise<Fusionada | null> {
-  const subida = (await read($, subidas)).find(s => s.rama === rama)
-  if (!subida) return null
-  const raiz = await $.session.root()
-  const git = (args: string[], timeoutMs = 30000): Promise<Salida> =>
-    $.process.run(['git', ...args], { cwd: raiz, timeoutMs }).catch((error: unknown) => ({ exitCode: 1, stdout: '', stderr: String(error) }))
-  const fallo = async (detalle: string) => {
-    await poner($, rama, { estado: 'error', detalle })
-    return null
-  }
-
-  await poner($, rama, { estado: 'fusionando' })
-  if ((await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0) return fallo(`hay una fusión a medias en ${a.ramaPrincipal}`)
-  const actual = (await git(['symbolic-ref', '--short', 'HEAD'])).stdout.trim()
-  if (actual !== '' && actual !== a.ramaPrincipal) return fallo(`la copia principal está en ${actual}, no en ${a.ramaPrincipal}`)
-  const punta = await git(['rev-parse', '--verify', `refs/heads/${rama}`])
-  if (punta.exitCode !== 0) return fallo(`la rama ${rama} no existe en esta copia`)
-  const distinta = !punta.stdout.trim().startsWith(subida.commit)
-
-  const hecho = await git(['merge', '--no-ff', rama, '-m', mensajeFusion(rama, subida.resumen, a.ramaPrincipal)], 120000)
-  if (hecho.exitCode !== 0) {
-    const archivos = conflictos((await git(['diff', '--name-only', '--diff-filter=U'])).stdout)
-    if ((await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0) await git(['merge', '--abort'])
-    if (archivos.length > 0 || /CONFLICT/.test(hecho.stdout)) {
-      const enviado = await avisar($, subida.sesion, textoConflicto(rama, archivos, a.ramaPrincipal))
-      await poner($, rama, { estado: 'conflicto', detalle: `${archivos.join(', ')}${enviado ? '' : ' · no he podido avisar al agente'}` })
-      return null
-    }
-    return fallo((hecho.stderr || hecho.stdout).trim().slice(0, 300) || 'git merge ha fallado')
-  }
-
-  const fusion = (await git(['rev-parse', 'HEAD'])).stdout.trim()
-  const revision = await revisarFusion($, rama, fusion, a)
-  let codigos: string[] = []
-  if (a.backlog.activo) {
-    const diff = await git(['diff', '-U0', `${fusion}^1`, fusion, '--', a.backlog.documento])
-    codigos = codigosConPrefijo(rama, diff.stdout, a.backlog.documento)
-    if (codigos.length > 0) {
-      // Los códigos con prefijo son lo esperado ahora: se renumeran todos juntos tras el lote.
-      revision.lineas = revision.lineas.map(l =>
-        l.startsWith(`✖ ${a.backlog.documento}`) ? `• ${codigos.length} códigos de ${a.backlog.documento} con prefijo: se renumeran tras el lote` : l,
-      )
-      revision.problemas = revision.lineas.filter(l => l.startsWith('✖')).length
-    }
-  }
-  await poner($, rama, { estado: 'fusionada', fusion, detalle: '' })
-  return { rama, fusion, aviso: subida.texto, revision, codigos, distinta }
-}
-
-/**
- * Lo que llega por la herramienta del lote: avisa al agente y, si está bien, cierra su worktree. La rama puede venir con
- * su nombre largo o corto, y puede no estar en la franja (fusionada a mano): se busca en git y en los worktrees.
- */
-async function resultado($: EngineInterface, nombre: string, ok: boolean, motivo: string, sesionDada: string): Promise<string> {
-  const a = await ajustesDe($)
-  const principal = a.ramaPrincipal
-  const lista = await read($, subidas)
-  const subida = lista.find(s => s.rama === nombre) ?? lista.find(s => corto(s.rama) === nombre)
-  const raiz = await $.session.root()
-  const git = async (...args: string[]) =>
-    $.process.run(['git', ...args], { cwd: raiz, timeoutMs: 20000 }).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }))
-  const copias = rutasDeGit((await git('worktree', 'list', '--porcelain')).stdout)
-  let rama = subida?.rama ?? ''
-  if (!rama) {
-    const copia = copias.find(w => w.rama !== '' && (w.rama === nombre || corto(w.rama) === nombre || corto(w.ruta.replace(/\\/g, '/')) === nombre))
-    rama = copia?.rama ?? ((await git('rev-parse', '-q', '--verify', `refs/heads/${nombre}`)).exitCode === 0 ? nombre : '')
-  }
-  if (!rama) return `${nombre}: no está en la franja ni hay una rama o un worktree con ese nombre.`
-  const sesion = sesionDada || subida?.sesion || ''
-  const fusion = (subida?.fusion || subida?.commit || (await git('rev-parse', '--short', 'HEAD')).stdout.trim()).slice(0, 9)
-  const sinSesion = sesion ? '' : ' (no sé la sesión de su agente: avísale tú con SendMessage o pásala en sesion)'
-  if (!ok) {
-    const enviado = await avisar($, sesion, textoFalla(rama, fusion, motivo || 'sin motivo', principal))
-    if (subida) await poner($, rama, { estado: 'falla', detalle: motivo })
-    return `${rama}: marcada como fallida${enviado ? '; agente avisado' : `; no he podido avisar al agente${sinSesion}`}.`
-  }
-  // Solo se cierra lo que ya está entero en la principal.
-  if ((await git('merge-base', '--is-ancestor', `refs/heads/${rama}`, 'HEAD')).exitCode !== 0) {
-    return `${rama}: no está entera en ${principal} (tiene commits que ${principal} no tiene); no cierro su worktree.`
-  }
-  let aviso = ''
-  if (a.backlog.activo) {
-    const quedan = codigosSinRenumerar(rama, (await git('show', `HEAD:${a.backlog.documento}`)).stdout)
-    if (quedan.length > 0) {
-      aviso = ` ⚠ Quedan en ${a.backlog.documento} sin renumerar: ${quedan.join(', ')} (node "${scripts($)}/renumerar.mjs" --aplicar ${corto(rama)}).`
-    }
-  }
-  const enviado = await avisar($, sesion, textoSubida(rama, fusion, principal))
-  const avisado = enviado ? ', agente avisado' : `, sin avisar al agente${sinSesion}`
-  const ruta = copias.find(w => w.rama === rama)?.ruta ?? ''
-  const abierto = ruta !== '' && !misma(ruta, raiz)
-  // worktree.mjs quita el worktree (con Orca o con git; lo que quede sin confirmar allí ya no hace falta: la rama está
-  // entera en la principal), el registro que pueda quedar en git, la rama y su reserva de bloque.
-  const cierre = (await script($, 'worktree.mjs', ['cerrar', rama], 180000)) as { cerrado?: boolean; motivo?: string } | null
-  if (!cierre?.cerrado) {
-    const porque = (cierre?.motivo ?? 'worktree.mjs no ha contestado').slice(0, 200)
-    if (subida) await poner($, rama, { estado: 'fusionada', detalle: `comprobada; no he podido cerrar el worktree: ${porque}` })
-    return `${rama}: comprobada${avisado}; el worktree no se ha podido cerrar (${porque}).${aviso}`
-  }
-  if (subida) await borrar($, rama)
-  return abierto ? `${rama}: comprobada${avisado} y worktree cerrado.${aviso}` : `${rama}: comprobada${avisado}; no tenía worktree abierto.${aviso}`
-}
-
-async function mandarSolucion($: EngineInterface, rama: string, nota: string): Promise<void> {
-  const subida = (await read($, subidas)).find(s => s.rama === rama)
-  if (!subida) return
-  const a = await ajustesDe($)
-  const motivo = subida.previo === 'conflicto' || subida.previo === 'falla' || subida.previo === 'error' || subida.previo === 'apartada' ? subida.detalle : ''
-  const enviado = await avisar($, subida.sesion, textoSolucionar(rama, subida.porRevisar, nota.trim(), motivo, a.ramaPrincipal))
-  await poner($, rama, enviado ? { estado: 'solucion-pedida' } : { estado: 'error', detalle: 'no he podido mandar el mensaje al agente' })
-}
-
-async function avisar($: EngineInterface, sesion: string, texto: string): Promise<boolean> {
-  if (!sesion) return false
-  const r = await $.session.send({ to: sesion, text: texto }).catch(() => ({ isDelivered: false as const, reason: 'error' }))
-  return r.isDelivered === true
-}
-
-// ---------------------------------------------------------------- guardas
-
-const copias = new Map<string, Copia>()
-
-/** La copia de la sesión (se lee una vez por raíz). */
-async function copia($: EngineInterface): Promise<Copia> {
-  const raiz = await $.session.root()
-  const guardada = copias.get(raiz)
-  if (guardada) return guardada
-  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
-  const git = await $.fs.stat(`${raiz}/.git`).catch(() => undefined)
-  const lista = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd: raiz, timeoutMs: 10000 }).catch(() => undefined)
-  // git fija core.ignorecase al clonar según el sistema de archivos: dice si las rutas se comparan sin mayúsculas.
-  const ignora = await $.process.run(['git', 'config', '--get', 'core.ignorecase'], { cwd: raiz, timeoutMs: 10000 }).catch(() => undefined)
-  const dicho = ignora && ignora.exitCode === 0 ? ignora.stdout.trim() : ''
-  const ignoraMayusculas = dicho === 'true' ? true : dicho === 'false' ? false : null
-  const leida = montarCopia(raiz, home, git?.kind === 'file', lista && lista.exitCode === 0 ? lista.stdout : '', ignoraMayusculas)
-  copias.set(raiz, leida)
-  return leida
-}
-
-/** Carpeta de la sesión ahora mismo, normalizada. */
-async function carpetaActual($: EngineInterface, c: Copia): Promise<string> {
-  return normalizar(await $.session.cwd(), null, c.home, c.plegar) ?? c.raiz
-}
-
-async function prohibidosQueEntran($: EngineInterface, carpeta: string, modo: Modo, prohibidos: readonly string[]): Promise<string[]> {
-  if (prohibidos.length === 0) return []
-  const estado = await $.process
-    .run(['git', '-C', carpeta, 'status', '--porcelain', '--untracked-files=all', '--', ...prohibidos], { timeoutMs: 15000 })
-    .catch(() => undefined)
-  return estado && estado.exitCode === 0 ? prohibidosConCambios(estado.stdout, modo) : []
 }

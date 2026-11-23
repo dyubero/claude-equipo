@@ -44,8 +44,11 @@ function prohibidoDe(abs: string, copiaGit: string, prohibidos: readonly string[
   return i >= 0 ? (prohibidos.filter(p => normalizarProhibidos([p]).length > 0)[i] ?? null) : null
 }
 
-/** Lo que dice la guarda de un `git add`, `git rm` o `git commit`. */
-export function juzgar(git: Git, c: Copia, prohibidos: readonly string[]): Juicio {
+/**
+ * Lo que dice la guarda de un `git add`, `git rm` o `git commit`. Con `barridos` en falso (guardas.barridos de los
+ * ajustes) no niega los `git add -A` y `git commit -a` de la copia principal; los prohibidos se miran siempre.
+ */
+export function juzgar(git: Git, c: Copia, prohibidos: readonly string[], barridos = true): Juicio {
   const copiaGit = copiaDe(git.carpeta, c)
   const enPrincipal = copiaGit !== null && copiaGit === c.principal
   const hayProhibidos = normalizarProhibidos(prohibidos).length > 0
@@ -55,7 +58,7 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[]): Juici
     const barrido =
       (git.orden !== 'rm' && opciones.some(o => BARRIDOS_ADD.has(o) || (/^-[a-zA-Z]+$/.test(o) && /[Au]/.test(o)))) ||
       rutas.some(r => r === '.' || r === ':/' || r === ':' || r === '*')
-    if (enPrincipal && barrido) {
+    if (enPrincipal && barrido && barridos) {
       return {
         tipo: 'niega',
         motivo:
@@ -79,7 +82,7 @@ export function juzgar(git: Git, c: Copia, prohibidos: readonly string[]): Juici
       opciones.some(o => o === '--all' || (/^-[a-zA-Z]+$/.test(o) && /^-[^mFcCt]*a/.test(o))) ||
       rutas.some(r => r === '.' || r === ':/' || r === '*') ||
       (copiaGit !== null && rutas.some(r => cubreProhibidos(r, git.carpeta, copiaGit, c, prohibidos)))
-    if (enPrincipal && todo) {
+    if (enPrincipal && todo && barridos) {
       return { tipo: 'niega', motivo: 'En la copia principal no se hace git commit -a / --all ni git commit .: allí solo entran las fusiones y lo que se añade a mano.' }
     }
     if (copiaGit === null || !hayProhibidos) return { tipo: 'pasa' }

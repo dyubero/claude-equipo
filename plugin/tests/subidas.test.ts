@@ -53,6 +53,8 @@ type Escena = {
   sinNode?: boolean
   /** Lo que contesta `git --version`. */
   git?: string
+  /** La copia principal tiene cambios añadidos (git add) sin confirmar. */
+  indice?: boolean
 }
 type Enviado = { to: string; text: string }
 
@@ -117,8 +119,10 @@ function preparar(on: On, escena: Escena = {}) {
       return (escena.chocan ?? []).includes(argv[3] as string) ? sale(1, 'CONFLICT (content): Merge conflict in src/app.ts\n') : sale(0, 'Merge made\n')
     }
     if (argv[1] === 'merge' && argv[2] === '--abort') return sale(0)
+    if (argv[1] === 'merge' && argv[2] === '--squash') return sale(0, 'Squash commit -- not updating HEAD\n')
+    if (argv[1] === 'diff' && argv.includes('--cached')) return sale(escena.indice ? 1 : 0)
     if (argv.includes('--diff-filter=U')) return sale(0, (escena.chocan ?? []).length > 0 ? 'src/app.ts\n' : '')
-    if (argv.includes('--parents')) return sale(0, 'f1 p1 p2\n')
+    if (argv.includes('--parents')) return sale(0, r.ordenes.some(o => o[2] === '--squash') ? 'f1 p1\n' : 'f1 p1 p2\n')
     if (argv.includes('--name-status')) return sale(0, 'M\tBACKLOG.md\nM\tsrc/carrito.ts\nM\tpackage-lock.json\n')
     if (argv.includes('-U0')) return sale(0, '+++ b/BACKLOG.md\n+| carrito-1 | algo | x |\n+| carrito-2 | otra | x |\n+++ b/DESIGN.md\n+### D32. Descuentos\n')
     if (argv.includes('status')) return sale(0, '')
@@ -292,8 +296,8 @@ test('una rama que choca se aborta, se avisa a su agente y el resto del lote sig
   expect(await ui.find({ type: 'Text', text: /carrito .* conflicto, agente avisado/ })).toBeDefined()
 })
 
-test('sin backlog ni decisiones (lo de por defecto), la petición solo pide compilar, probar y el resultado', NO_CONTEXTO, async ($, on) => {
-  const r = preparar(on, { ajustes: '{}' })
+test('sin backlog ni decisiones, la petición solo pide compilar, probar y el resultado', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "comandos": { "compilar": "npm run build", "probar": "npm test" } }' })
   await arrancar($)
   await recibir($, LISTA_CARRITO)
   const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
@@ -348,6 +352,63 @@ test('el resultado del lote cierra el worktree de las que están bien y avisa a 
   expect(await ui.find({ key: 'subir-carrito' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /login .* dentro, pero falla/ })).toBeDefined()
   expect(await ui.find({ key: 'solucionar-login' })).toBeDefined()
+})
+
+test('sin comandos en los ajustes (lo de por defecto), la petición no inventa ninguno', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{}' })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.prompts[0]).toMatch(/1\. Pruebas del lote, una sola vez: las pruebas de lo que tocan/)
+  expect(r.prompts[0]).toMatch(/comandos\.probar no está puesto/)
+  expect(r.prompts[0]).not.toMatch(/npm/)
+})
+
+test('con fusion.estrategia «squash» entra un solo commit, y la rama se cierra si no se ha movido', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "fusion": { "estrategia": "squash" } }', fusionadas: [] })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.ordenes).toContainEqual(['git', 'merge', '--squash', 'carrito'])
+  expect(r.ordenes).toContainEqual(['git', 'commit', '-m', 'Fusión de carrito en main: carrito con descuentos por cantidad (D31-D33)'])
+  expect(r.ordenes.some(o => o[1] === 'merge' && o[2] === '--no-ff')).toBe(false)
+  expect(r.prompts[0]).toMatch(/es un solo commit con toda la rama \(squash\)/)
+  // Los commits de la rama no están en main: se cierra a la fuerza, porque su punta es la que se subió.
+  const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
+  expect(texto).toMatch(/carrito: comprobada, agente avisado y worktree cerrado/)
+  expect(r.ordenes.find(o => o[2] === 'cerrar')?.slice(2)).toEqual(['cerrar', 'carrito', '--forzar'])
+})
+
+test('con squash, si hay algo añadido en la copia principal no se sube', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "fusion": { "estrategia": "squash" } }', indice: true })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  expect(r.ordenes.some(o => o[1] === 'merge')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /no ha entrado: la copia principal tiene cambios añadidos sin confirmar/ })).toBeDefined()
+})
+
+test('con worktrees.cerrarAlSubir apagado, la rama comprobada conserva su worktree', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "worktrees": { "cerrarAlSubir": false } }' })
+  await arrancar($)
+  await recibir($, LISTA_CARRITO)
+  const ui = await $.ui.mount({ ...BANDA, surface: 'terminal' })
+  await ui.press({ key: 'subir-carrito' })
+  const texto = JSON.stringify(await $.tool.call({ tool: 'mcp__equipo__resultado_lote', ramas: [{ rama: 'carrito', ok: true }] } as never))
+  expect(texto).toMatch(/carrito: comprobada, agente avisado; su worktree sigue abierto/)
+  expect(r.ordenes.some(o => o[2] === 'cerrar')).toBe(false)
+  expect(r.enviados.find(m => m.to === 'carrito-e4')?.text).toMatch(/Tu worktree sigue abierto/)
+})
+
+test('unos ajustes con una clave que no existe se avisan al empezar', NO_CONTEXTO, async ($, on) => {
+  const r = preparar(on, { ajustes: '{ "comandos": { "compliar": "make" } }' })
+  await arrancar($)
+  expect(r.toasts.length).toBe(1)
+  expect(r.toasts[0]).toMatch(/\.claude\/equipo\.json tiene un problema: «comandos\.compliar» no es un ajuste/)
+  expect(r.toasts[0]).toMatch(/ajustes\.mjs" --comprobar/)
 })
 
 const LISTA_PAGOS = 'La rama ana/pagos está lista para subir (ccc3333)\nSesión: pagos-11\nResumen: pagos con tarjeta.'

@@ -143,10 +143,10 @@ export function textoApartada(rama: string, con: string[], archivos: string[], p
   ].join('\n')
 }
 
-export function textoSubida(rama: string, commit: string, principal = 'main'): string {
+export function textoSubida(rama: string, commit: string, principal = 'main', cierra = true): string {
   return (
     `La rama ${rama} está subida a ${principal} (${commit}) y la sesión principal la ha comprobado. ` +
-    'Se cierra tu worktree: no hace falta que hagas nada más.'
+    (cierra ? 'Se cierra tu worktree: no hace falta que hagas nada más.' : 'Tu worktree sigue abierto: no hace falta que hagas nada más.')
   )
 }
 
@@ -238,11 +238,14 @@ export function peticionLote(lote: Fusionada[], fallidas: string[], apartadas: A
     )
   }
   const rangos = lote.map(f => `${f.fusion.slice(0, 9)}^1..${f.fusion.slice(0, 9)}`).join(' ')
+  const acotadas = `las pruebas de lo que tocan (las del «Probar:» de cada aviso; propuesta con ${node('pruebas.mjs', rangos)})`
   pasos.push(
     'Pruebas del lote, una sola vez: ' +
-      (a.comandos.compilar ? `\`${a.comandos.compilar}\`; ` : '') +
-      `después las pruebas de lo que tocan (las del «Probar:» de cada aviso; propuesta con ${node('pruebas.mjs', rangos)}). ` +
-      `Si no sabes acotarlas, \`${a.comandos.probar || 'la orden de pruebas del proyecto'}\`. No repitas lo que ya pasó en el agente si no se cruza con otra rama.`,
+      (a.comandos.compilar ? `\`${a.comandos.compilar}\`; después ${acotadas}. ` : `${acotadas}. `) +
+      (a.comandos.probar
+        ? `Si no sabes acotarlas, \`${a.comandos.probar}\`. `
+        : 'Si no sabes acotarlas, pasa todas las del proyecto (comandos.probar no está puesto en .claude/equipo.json). ') +
+      'No repitas lo que ya pasó en el agente si no se cruza con otra rama.',
   )
   pasos.push(
     `Cuenta el resultado al usuario y llama a ${x.herramienta} con cada rama: ok si está bien, o el motivo del fallo. ` +

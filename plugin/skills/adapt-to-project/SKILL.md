@@ -124,10 +124,14 @@ yourself and mention them in the summary.
 ## 4. Write and verify the settings
 
 Write `.claude/equipo.json` with **only** the keys that differ from the defaults — a short file is easier for the team
-to read and keeps future default improvements flowing in. Write it with your file-writing tool, not a shell heredoc:
+to read and keeps future default improvements flowing in. Start it with the `$schema` line from
+`references/settings.md`. Personal preferences the user mentions along the way (their launcher, the context-bar
+thresholds, their branch prefix) go to `~/.claude/equipo.json` instead, and only if they ask for them: that file is
+theirs. Write it with your file-writing tool, not a shell heredoc:
 shells eat the backslashes in `pruebas.patron` and leave invalid JSON. Then:
 
-- `node <scripts>/ajustes.mjs` must print the merged settings without errors.
+- `node <scripts>/ajustes.mjs --comprobar` must report no problems (it catches misspelt keys and invalid values), and
+  `node <scripts>/ajustes.mjs` must print the merged settings.
 - Every command in `comandos` should have run once (step 2, or now if it changed). A command that fails now will fail
   the first batch. Note how long `probar` takes: if it is several minutes, suggest `probarArchivos` (tests for just the
   changed files) when the runner accepts file paths, and try it with a real test file. Leave `probarArchivos` empty

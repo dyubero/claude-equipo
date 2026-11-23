@@ -10,6 +10,9 @@ export type Contexto = {
   compactando: boolean
   /** Tras compactar, la cifra no se pone al día hasta la siguiente respuesta. */
   compactado: boolean
+  /** Porcentajes desde los que avisa en amarillo y en rojo (contexto.aviso y contexto.peligro de los ajustes). */
+  aviso?: number
+  peligro?: number
 }
 
 /** Una copia del repositorio en el panel de ramas. */
@@ -69,6 +72,8 @@ export type Subida = {
   marcada: boolean
   /** Commit de la fusión en la principal, cuando ha entrado. */
   fusion: string
+  /** La punta de la rama cuando se subió: con «squash» es lo que dice si la rama ha seguido después. */
+  punta?: string
   /** Por qué no ha entrado o qué ha fallado. */
   detalle: string
   /** Con qué chocaría al subirla ahora, según el último ensayo: la principal u otra rama de la franja. */

@@ -17,6 +17,8 @@ export type Escena = {
   estado?: string
   /** El .claude/equipo.json del proyecto (texto), o nada. */
   ajustes?: string
+  /** El ~/.claude/equipo.json del usuario (texto), o nada. */
+  ajustesUsuario?: string
   /** Lo que contesta `git config --get core.ignorecase` (macOS por defecto: true). Sin decirlo, git no contesta. */
   ignoraMayusculas?: boolean
 }
@@ -36,7 +38,9 @@ export function preparar(on: On, escena: Escena = {}): Registro {
   })
   on('fs.stat', () => ({ value: { kind: escena.enPrincipal ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', ($, e) => {
-    if (e.path.replace(/\\/g, '/').endsWith('.claude/equipo.json') && escena.ajustes !== undefined) return { value: escena.ajustes }
+    const ruta = e.path.replace(/\\/g, '/').toLowerCase()
+    if (ruta.endsWith('ana/.claude/equipo.json')) return escena.ajustesUsuario === undefined ? { deny: 'no existe' } : { value: escena.ajustesUsuario }
+    if (ruta.endsWith('.claude/equipo.json') && escena.ajustes !== undefined) return { value: escena.ajustes }
     return { deny: 'no existe' }
   })
   on('ui.toast', ($, e) => {

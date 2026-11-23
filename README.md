@@ -156,18 +156,29 @@ Las skills nuevas salen en la sesión siguiente (o tras `/reload-plugins`). Desp
 
 ## Ajustes: `.claude/equipo.json`
 
-Todo es opcional; lo que no está vale lo de por defecto. `node <plugin>/scripts/ajustes.mjs` enseña lo que vale en esa
-copia.
+Todo es opcional; lo que no está vale lo de por defecto. Hay dos niveles, y el del proyecto va encima:
+
+- **`~/.claude/equipo.json`**, lo tuyo en todos tus repositorios: tu lanzador, tus umbrales de la franja, tu prefijo de
+  rama. No va en ningún commit.
+- **`<proyecto>/.claude/equipo.json`**, lo del proyecto, con commit: cómo compila, qué pruebas pasa, qué no se sube.
+
+`node <plugin>/scripts/ajustes.mjs` enseña lo que vale en esa copia; con `--origen`, de qué archivo sale cada valor; con
+`--comprobar`, las claves mal escritas y los valores que no valen (el plugin también lo avisa al empezar la sesión).
+Para que el editor autocomplete y marque los errores, pon al principio del archivo:
+
+```json
+"$schema": "https://raw.githubusercontent.com/dyubero/claude-equipo/main/plugin/equipo.schema.json"
+```
 
 | Clave | Por defecto | Para qué |
 |---|---|---|
 | `ramaPrincipal` | `"main"` | La rama a la que se suben las demás. |
 | `idioma` | `"es"` | Idioma de los commits, documentos y avisos que escriben los agentes (código ISO: `en`, `es`, `fr`…; lo leen las skills). |
-| `comandos.compilar` | `"npm run build"` | Lo primero que se pasa en el lote y al traer la principal. `""` si no hay. |
-| `comandos.probar` | `"npm test"` | Todas las pruebas. |
+| `comandos.compilar` | `""` | Lo primero que se pasa en el lote y al traer la principal (`"npm run build"`, `"cargo check"`…). Vacío si no hay nada que compilar. |
+| `comandos.probar` | `""` | Todas las pruebas (`"npm test"`, `"pytest"`…). |
 | `comandos.probarArchivos` | `""` | Solo unas pruebas: `{archivos}` se cambia por la lista (p. ej. `"npx vitest run {archivos}"`). Vacío: siempre `probar`. |
 | `comandos.regenerar` | `""` | Rehace los `generados` tras subir (p. ej. `"npm install"` para `package-lock.json`). |
-| `pruebas.patron` | archivos `*.test.*` / `*.spec.*` de JS y TS | Expresión regular que dice qué archivos son pruebas, para elegir las de cada rama. `adapt-to-project` propone la de cada ecosistema (`test_*.py`, `*_test.go`, `*_spec.rb`…). |
+| `pruebas.patron` | las convenciones habituales de JS/TS, Python, Rust, Go, JVM, .NET, PHP, Ruby, Elixir, Dart y Swift | Expresión regular que dice qué archivos son pruebas, para elegir las de cada rama. Solo hay que tocarla si el proyecto las nombra de otra forma. |
 | `prohibidos` | `[]` | Archivos o carpetas (rutas desde la raíz, sin comodines) que nunca entran en un commit. |
 | `generados` | `[]` | Patrones (como en `.gitattributes`) de archivos generados: al fusionar se queda el de la copia actual y luego se rehacen. |
 | `unir` | `[]` | Documentos en los que, si dos ramas solo añaden líneas en el mismo sitio, se conservan las dos. |
@@ -175,6 +186,10 @@ copia.
 | `decisiones.documento` / `prefijo` / `bloque` | `"DESIGN.md"` / `"D"` / `10` | Dónde están, cómo empiezan (`"ADR-"` vale) y cuántas por bloque. |
 | `backlog.activo` | `false` | Backlog con códigos en la primera celda de cada fila (`\| T12 \| … \|`): en las ramas se apuntan con el nombre de la rama delante (`carrito-T1`) y la principal los renumera al subir. |
 | `backlog.documento` | `"BACKLOG.md"` | El backlog. |
+| `fusion.estrategia` | `"merge"` | Cómo entra cada rama: `"merge"` (una fusión con `--no-ff`) o `"squash"` (un solo commit con toda la rama). |
+| `contexto.aviso` / `contexto.peligro` | `60` / `80` | Porcentajes desde los que la franja del contexto sale en amarillo y en rojo. |
+| `guardas.barridos` | `true` | En la copia principal, negar `git add -A` / `.` / `-u` y `git commit -a`. Los `prohibidos` se miran siempre. |
+| `worktrees.cerrarAlSubir` | `true` | Cerrar el worktree de una rama cuando el lote la da por buena. Con `false`, se avisa al agente y el worktree se queda. |
 | `pendientes` | `"docs/pendientes.md"` | Donde `/pendiente`, `encargo` y `comprobar-lote` apuntan lo que está en marcha y lo que queda sin probar. |
 | `worktrees.gestor` | `"auto"` | Quién crea y cierra los worktrees: `"orca"`, `"git"` o `"auto"` (Orca si está en el `PATH`, si no git). |
 | `worktrees.carpeta` | `"../{repo}-worktrees/{nombre}"` | Con git: carpeta de cada worktree, desde la copia principal. |
@@ -182,6 +197,9 @@ copia.
 | `lanzar.preajuste` / `lanzar.orden` | `"auto"` / `[]` | Con git: cómo se abre la sesión del agente (ver «Sin Orca»). |
 | `orca.repo` | `""` | Nombre del repositorio en Orca; vacío, el de la carpeta de la copia principal. |
 | `sesionPrincipal` | `""` | Cómo empieza el nombre de la sesión de la copia principal en `ListAgents`; vacío, el de su carpeta (con `_` → `-`). |
+
+Los comandos no tienen valor por defecto porque dependen del proyecto: los pone `adapt-to-project`. Sin ellos, la
+comprobación del lote pide a Claude que pase las pruebas que sepa acotar, sin inventarse ninguna orden.
 
 Los interruptores de cada pieza están en `/config`, en las filas del plugin `equipo`: *Franja del contexto*,
 *Subidas desde la copia principal*, *Freno a las fusiones en la principal* y *Guarda de los commits*.
@@ -209,8 +227,9 @@ Los interruptores de cada pieza están en `/config`, en las filas del plugin `eq
 5. **Pulsas «Subir»** (o marcas varias y «Subir marcadas», o «Subir todas»). El mod:
    - ensaya lo que hay en cola contra la principal y ordena de menos a más choques;
    - aparta la que choca de verdad con la principal y avisa a su agente con los archivos;
-   - fusiona una tras otra con `git merge --no-ff <rama> -m "Fusión de <rama> en main: <resumen>"`; si una choca pese
-     al ensayo, `git merge --abort` y aviso a su agente;
+   - fusiona una tras otra con `git merge --no-ff <rama> -m "Fusión de <rama> en main: <resumen>"` (o, con
+     `fusion.estrategia` en `"squash"`, `git merge --squash` y un commit con ese mensaje); si una choca pese al
+     ensayo, se deshace y se avisa a su agente;
    - avisa a la que chocaba con otra del lote cuando esa ya ha entrado, para que traiga main de una vez.
 6. **Con la cola vacía, el mod pide a Claude una sola comprobación del lote** (skill `comprobar-lote`): rehacer lo
    generado si alguna lo toca, renumerar el backlog si lo usas, compilar una vez, las pruebas de lo que tocan una vez, y

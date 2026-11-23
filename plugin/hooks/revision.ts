@@ -39,7 +39,10 @@ export function revisar(x: Entrada, a: Ajustes): Revision {
     mal('el commit no existe en esta copia (¿se ha fusionado en otra carpeta?)')
     return { lineas, problemas, generados: false }
   }
-  if (padres.length < 3) mal('el commit no es una fusión (--no-ff)')
+  if (a.fusion.estrategia === 'squash') {
+    if (padres.length === 2) bien('es un solo commit con toda la rama (squash)')
+    else mal('el commit no es el de la rama en uno (squash): tiene más de un padre')
+  } else if (padres.length < 3) mal('el commit no es una fusión (--no-ff)')
   else bien('es una fusión')
 
   const cambios = x.archivos

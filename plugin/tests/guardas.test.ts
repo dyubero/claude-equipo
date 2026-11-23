@@ -140,6 +140,19 @@ test('git commit sin -a con un prohibido cambiado sin añadir pasa; con -a, no',
   expect(negado(await $.tool.call({ tool: 'Bash', command: 'git commit -am "x"' }))).toMatch(/dist\/app\.js/)
 })
 
+test('con guardas.barridos apagado, git add -A pasa en la principal, pero los prohibidos siguen sin entrar', async ($, on) => {
+  preparar(on, { enPrincipal: true, ajustes: JSON.stringify({ guardas: { barridos: false }, prohibidos: ['.env.local'] }), estado: '' })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add -A' }))).toBeUndefined()
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git commit -am "x"' }))).toBeUndefined()
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add .env.local' }))).toMatch(/\.env\.local no entra/)
+})
+
+test('los ajustes del usuario (~/.claude/equipo.json) valen en todos sus repositorios, y los del proyecto van encima', async ($, on) => {
+  preparar(on, { ajustesUsuario: JSON.stringify({ prohibidos: ['secretos.txt'], ramaPrincipal: 'trunk' }), ajustes: '{ "ramaPrincipal": "develop" }' })
+  expect(negado(await $.tool.call({ tool: 'Bash', command: 'git add secretos.txt' }))).toMatch(/secretos\.txt no entra/)
+  expect(negado(await $.tool.call({ tool: 'Bash', command: `git -C ${PRINCIPAL} merge ana/carrito` }))).toMatch(/git merge develop/)
+})
+
 test('un mensaje en heredoc no confunde a la guarda', async ($, on) => {
   preparar(on, { enPrincipal: true })
   const command = ['git commit -m "$(cat <<\'EOF\'', 'Añade el carrito', '', 'git add -A no va aquí', 'EOF', ')"'].join('\n')

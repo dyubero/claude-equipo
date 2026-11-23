@@ -2,7 +2,7 @@
 
 import type { Contexto } from '../types'
 
-/** Desde qué porcentaje se avisa en amarillo y en rojo. */
+/** Desde qué porcentaje se avisa en amarillo y en rojo, si los ajustes no dicen otra cosa (contexto.aviso y .peligro). */
 const AVISO = 60
 const PELIGRO = 80
 
@@ -24,7 +24,7 @@ export function texto(c: Contexto): string {
   if (c.compactando) return '◐ Contexto: compactando…'
   if (c.tokens === null || c.ventana <= 0) return '◌ Contexto: se sabrá tras la primera respuesta'
   const p = porcentaje(c)
-  const icono = p >= PELIGRO ? '▲' : p >= AVISO ? '◆' : '●'
+  const icono = p >= (c.peligro ?? PELIGRO) ? '▲' : p >= (c.aviso ?? AVISO) ? '◆' : '●'
   const libre = Math.max(0, c.ventana - c.tokens)
   const despues = c.compactado ? ' · compactado (la cifra se pone al día con la próxima respuesta)' : ''
   return `${icono} Contexto: ${miles(c.tokens)} de ${miles(c.ventana)} usados (${p} %) · libres ${miles(libre)}${despues}`
@@ -33,5 +33,5 @@ export function texto(c: Contexto): string {
 export function color(c: Contexto): string {
   if (c.tokens === null || c.compactando) return 'inactive'
   const p = porcentaje(c)
-  return p >= PELIGRO ? 'error' : p >= AVISO ? 'warning' : 'subtle'
+  return p >= (c.peligro ?? PELIGRO) ? 'error' : p >= (c.aviso ?? AVISO) ? 'warning' : 'subtle'
 }
